@@ -23,7 +23,7 @@ class DeckAdmin(admin.ModelAdmin):
 
     list_display = ["name", "user", "is_public", "created_at"]
     list_filter = ["is_public"]
-    search_fields = ["name", "description", "user__username"]
+    search_fields = ["name", "description", "user__email"]
     readonly_fields = ["id", "created_at", "updated_at"]
     inlines = [CardInline]
 

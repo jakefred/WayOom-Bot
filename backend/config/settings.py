@@ -10,22 +10,25 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Sensitive values are read from environment variables so they are never
+# hardcoded in source control. Copy backend/.env.example to backend/.env
+# and fill in the values for local development.
+SECRET_KEY = os.environ["SECRET_KEY"]
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
+# Defaults to False so production environments are safe unless explicitly enabled.
+DEBUG = os.environ.get("DEBUG", "False") == "True"
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-9%m+a_x#-2vor317@%=+0v(uk1i%(%x13!*(cc&$6y)90n^qh6'
+# In production, set this to your domain(s), e.g. "myapp.com,www.myapp.com".
+_allowed = os.environ.get("ALLOWED_HOSTS", "")
+ALLOWED_HOSTS = [h.strip() for h in _allowed.split(",") if h.strip()]
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = []
+# Custom user model — must be set before any migration that references User.
+AUTH_USER_MODEL = "users.User"
 
 
 # Application definition
@@ -37,6 +40,10 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # Django defaults...
+    "rest_framework",
+    "users",
+    "wayoom_bot",
 ]
 
 MIDDLEWARE = [
