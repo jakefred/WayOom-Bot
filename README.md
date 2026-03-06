@@ -160,29 +160,36 @@ Client Request
 - [x] REST API with ownership enforcement
 - [x] JWT authentication
 - [x] OpenAPI / Swagger documentation
-- [x] Frontend scaffold (auth, deck list/create, card list/create)
+- [x] Frontend scaffold — auth, deck list/create, card list/create ([#6](https://github.com/jakefred/WayOom-Bot/issues/6))
+- [x] Model and view test suite — 81 tests ([#9](https://github.com/jakefred/WayOom-Bot/issues/9))
+- [x] CI pipeline — GitHub Actions runs tests and lint on every push/PR ([#14](https://github.com/jakefred/WayOom-Bot/issues/14))
 
-### In Progress
+### Short Term — Core Experience
 
 - [ ] Flashcard study mode — flip cards front/back
 - [ ] Edit and delete decks and cards from the UI
 - [ ] Remove the name field from cards ([#12](https://github.com/jakefred/WayOom-Bot/issues/12))
-- [ ] Account recovery and deletion ([#13](https://github.com/jakefred/WayOom-Bot/issues/13))
 - [ ] Frontend design review ([#7](https://github.com/jakefred/WayOom-Bot/issues/7))
-
-### Before Production
-
+- [ ] Add a sidebar to the UI ([#17](https://github.com/jakefred/WayOom-Bot/issues/17))
+- [ ] Add a theme ([#18](https://github.com/jakefred/WayOom-Bot/issues/18))
+- [ ] WayOom icon ([#11](https://github.com/jakefred/WayOom-Bot/issues/11))
 - [ ] Fix: anonymous users cannot read cards in public decks ([#1](https://github.com/jakefred/WayOom-Bot/issues/1))
-- [ ] Switch from SQLite to PostgreSQL ([#5](https://github.com/jakefred/WayOom-Bot/issues/5))
+- [ ] Tag validation comment — document intentional duplication ([#2](https://github.com/jakefred/WayOom-Bot/issues/2))
+- [ ] Documentation pass ([#8](https://github.com/jakefred/WayOom-Bot/issues/8))
+
+### Before Production — Security & Infrastructure
+
 - [ ] Rate limiting on auth endpoints ([#3](https://github.com/jakefred/WayOom-Bot/issues/3))
 - [ ] Move refresh token from `localStorage` to an `httpOnly` cookie
+- [ ] Add password strength indicators to the UI ([#16](https://github.com/jakefred/WayOom-Bot/issues/16))
 - [ ] Security review ([#10](https://github.com/jakefred/WayOom-Bot/issues/10))
-- [ ] Testing ([#9](https://github.com/jakefred/WayOom-Bot/issues/9))
-- [ ] CI/CD pipeline ([#14](https://github.com/jakefred/WayOom-Bot/issues/14))
-- [ ] Documentation pass ([#8](https://github.com/jakefred/WayOom-Bot/issues/8))
+- [ ] Switch from SQLite to PostgreSQL ([#5](https://github.com/jakefred/WayOom-Bot/issues/5))
+- [ ] CD pipeline — automated deployment ([#19](https://github.com/jakefred/WayOom-Bot/issues/19))
+- [ ] Account recovery and deletion ([#13](https://github.com/jakefred/WayOom-Bot/issues/13))
 
 ### Long Term
 
+- Two-factor authentication ([#15](https://github.com/jakefred/WayOom-Bot/issues/15))
 - Spaced repetition scheduling
 - Rich card content (images, markdown, audio)
 - Mobile-friendly experience
