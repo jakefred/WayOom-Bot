@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from rest_framework import status
+from rest_framework.test import APITestCase
 
 from wayoom_bot.models import (
     Card,
@@ -233,3 +235,273 @@ class CardQuerySetTests(TestCase):
         owned = set(Card.objects.owned_by(self.bob).values_list("id", flat=True))
         self.assertNotIn(self.card_alice_private.id, owned)
         self.assertNotIn(self.card_alice_public.id, owned)
+
+
+# ===========================================================================
+# View tests
+# ===========================================================================
+
+def deck_list_url():
+    return "/api/decks/"
+
+
+def deck_detail_url(deck_id):
+    return f"/api/decks/{deck_id}/"
+
+
+def card_list_url(deck_id):
+    return f"/api/decks/{deck_id}/cards/"
+
+
+def card_detail_url(deck_id, card_id):
+    return f"/api/decks/{deck_id}/cards/{card_id}/"
+
+
+# ---------------------------------------------------------------------------
+# DeckViewSet
+# ---------------------------------------------------------------------------
+
+class DeckViewListTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.alice = User.objects.create_user(email="alice@example.com", password="pass1234")
+        cls.bob = User.objects.create_user(email="bob@example.com", password="pass1234")
+        cls.alice_private = Deck.objects.create(name="A Priv", user=cls.alice, is_public=False)
+        cls.alice_public = Deck.objects.create(name="A Pub", user=cls.alice, is_public=True)
+        cls.bob_private = Deck.objects.create(name="B Priv", user=cls.bob, is_public=False)
+
+    def test_authenticated_user_sees_own_and_public(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.get(deck_list_url())
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        ids = {d["id"] for d in resp.data}
+        self.assertIn(str(self.alice_private.id), ids)
+        self.assertIn(str(self.alice_public.id), ids)
+        self.assertNotIn(str(self.bob_private.id), ids)
+
+    def test_anonymous_user_sees_only_public(self):
+        resp = self.client.get(deck_list_url())
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        ids = {d["id"] for d in resp.data}
+        self.assertIn(str(self.alice_public.id), ids)
+        self.assertNotIn(str(self.alice_private.id), ids)
+        self.assertNotIn(str(self.bob_private.id), ids)
+
+
+class DeckViewCreateTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.alice = User.objects.create_user(email="alice@example.com", password="pass1234")
+
+    def test_authenticated_user_can_create_deck(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(deck_list_url(), {"name": "New Deck"})
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["name"], "New Deck")
+        self.assertEqual(resp.data["user"], self.alice.id)
+
+    def test_anonymous_user_cannot_create_deck(self):
+        resp = self.client.post(deck_list_url(), {"name": "Nope"})
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_user_field_cannot_be_overridden(self):
+        bob = User.objects.create_user(email="bob@example.com", password="pass1234")
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(deck_list_url(), {"name": "Stolen", "user": str(bob.id)})
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["user"], self.alice.id)
+
+
+class DeckViewUpdateDeleteTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.alice = User.objects.create_user(email="alice@example.com", password="pass1234")
+        cls.bob = User.objects.create_user(email="bob@example.com", password="pass1234")
+        cls.alice_deck = Deck.objects.create(name="Alice Deck", user=cls.alice)
+        cls.alice_public_deck = Deck.objects.create(name="Alice Public", user=cls.alice, is_public=True)
+
+    def test_owner_can_update_deck(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.patch(deck_detail_url(self.alice_deck.id), {"name": "Renamed"})
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["name"], "Renamed")
+
+    def test_non_owner_cannot_update_private_deck(self):
+        self.client.force_authenticate(self.bob)
+        resp = self.client.patch(deck_detail_url(self.alice_deck.id), {"name": "Hijacked"})
+        # Private deck is invisible to non-owners — 404 avoids leaking existence.
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_non_owner_cannot_update_public_deck(self):
+        self.client.force_authenticate(self.bob)
+        resp = self.client.patch(deck_detail_url(self.alice_public_deck.id), {"name": "Hijacked"})
+        # Public deck is visible but not writable — 403.
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_owner_can_delete_deck(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.delete(deck_detail_url(self.alice_deck.id))
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Deck.objects.filter(id=self.alice_deck.id).exists())
+
+    def test_non_owner_cannot_delete_private_deck(self):
+        self.client.force_authenticate(self.bob)
+        resp = self.client.delete(deck_detail_url(self.alice_deck.id))
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_non_owner_cannot_delete_public_deck(self):
+        self.client.force_authenticate(self.bob)
+        resp = self.client.delete(deck_detail_url(self.alice_public_deck.id))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_anonymous_cannot_update_deck(self):
+        resp = self.client.patch(deck_detail_url(self.alice_deck.id), {"name": "Nope"})
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+# ---------------------------------------------------------------------------
+# CardViewSet
+# ---------------------------------------------------------------------------
+
+class CardViewListTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.alice = User.objects.create_user(email="alice@example.com", password="pass1234")
+        cls.bob = User.objects.create_user(email="bob@example.com", password="pass1234")
+        cls.alice_deck = Deck.objects.create(name="A Deck", user=cls.alice)
+        cls.bob_deck = Deck.objects.create(name="B Deck", user=cls.bob, is_public=False)
+        cls.alice_card = Card.objects.create(name="AC", deck=cls.alice_deck, front="F", back="B")
+        cls.bob_card = Card.objects.create(name="BC", deck=cls.bob_deck, front="F", back="B")
+
+    def test_owner_can_list_cards(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.get(card_list_url(self.alice_deck.id))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(resp.data), 1)
+
+    def test_non_owner_cannot_see_private_deck_cards(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.get(card_list_url(self.bob_deck.id))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(resp.data), 0)
+
+    def test_anonymous_user_is_blocked(self):
+        resp = self.client.get(card_list_url(self.alice_deck.id))
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class CardViewCreateTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.alice = User.objects.create_user(email="alice@example.com", password="pass1234")
+        cls.bob = User.objects.create_user(email="bob@example.com", password="pass1234")
+        cls.alice_deck = Deck.objects.create(name="A Deck", user=cls.alice)
+        cls.bob_deck = Deck.objects.create(name="B Deck", user=cls.bob)
+
+    def test_owner_can_create_card(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(card_list_url(self.alice_deck.id), {
+            "name": "New Card",
+            "front": "Question",
+            "back": "Answer",
+        })
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["deck"], self.alice_deck.id)
+
+    def test_non_owner_cannot_create_card_in_others_deck(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(card_list_url(self.bob_deck.id), {
+            "name": "Sneaky",
+            "front": "Q",
+            "back": "A",
+        })
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_anonymous_cannot_create_card(self):
+        resp = self.client.post(card_list_url(self.alice_deck.id), {
+            "name": "Nope",
+            "front": "Q",
+            "back": "A",
+        })
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_card_tags_default_to_empty(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(card_list_url(self.alice_deck.id), {
+            "name": "No Tags",
+            "front": "Q",
+            "back": "A",
+        })
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["tags"], [])
+
+
+class CardViewUpdateDeleteTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.alice = User.objects.create_user(email="alice@example.com", password="pass1234")
+        cls.bob = User.objects.create_user(email="bob@example.com", password="pass1234")
+        cls.alice_private_deck = Deck.objects.create(name="A Priv", user=cls.alice, is_public=False)
+        cls.alice_public_deck = Deck.objects.create(name="A Pub", user=cls.alice, is_public=True)
+        cls.private_card = Card.objects.create(
+            name="PC", deck=cls.alice_private_deck, front="F", back="B"
+        )
+        cls.public_card = Card.objects.create(
+            name="PubC", deck=cls.alice_public_deck, front="F", back="B"
+        )
+
+    def test_owner_can_update_card(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.patch(
+            card_detail_url(self.alice_private_deck.id, self.private_card.id),
+            {"front": "Updated"},
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["front"], "Updated")
+
+    def test_non_owner_cannot_update_private_deck_card(self):
+        self.client.force_authenticate(self.bob)
+        resp = self.client.patch(
+            card_detail_url(self.alice_private_deck.id, self.private_card.id),
+            {"front": "Hijacked"},
+        )
+        # Private deck card is invisible — 404.
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_non_owner_cannot_update_public_deck_card(self):
+        self.client.force_authenticate(self.bob)
+        resp = self.client.patch(
+            card_detail_url(self.alice_public_deck.id, self.public_card.id),
+            {"front": "Hijacked"},
+        )
+        # Public deck card is visible but not writable — 403.
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_owner_can_delete_card(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.delete(
+            card_detail_url(self.alice_private_deck.id, self.private_card.id),
+        )
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Card.objects.filter(id=self.private_card.id).exists())
+
+    def test_non_owner_cannot_delete_private_deck_card(self):
+        self.client.force_authenticate(self.bob)
+        resp = self.client.delete(
+            card_detail_url(self.alice_private_deck.id, self.private_card.id),
+        )
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_non_owner_cannot_delete_public_deck_card(self):
+        self.client.force_authenticate(self.bob)
+        resp = self.client.delete(
+            card_detail_url(self.alice_public_deck.id, self.public_card.id),
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_anonymous_cannot_update_card(self):
+        resp = self.client.patch(
+            card_detail_url(self.alice_private_deck.id, self.private_card.id),
+            {"front": "Nope"},
+        )
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
