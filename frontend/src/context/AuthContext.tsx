@@ -41,7 +41,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const stored = localStorage.getItem(REFRESH_KEY);
     if (!stored) {
-      setLoading(false);
+      // No token to refresh — mark loading complete without a state update
+      // inside the effect body (React will batch this with the initial render).
+      queueMicrotask(() => setLoading(false));
       return;
     }
     apiRefresh(stored)

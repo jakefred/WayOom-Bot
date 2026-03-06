@@ -19,5 +19,22 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // Allow exporting hooks and helpers alongside components.
+      // This is standard for context files (AuthProvider + useAuth)
+      // and shadcn/ui components (Button + buttonVariants).
+      'react-refresh/only-export-components': [
+        'warn',
+        { allowExportNames: ['useAuth'] },
+      ],
+    },
+  },
+  {
+    // shadcn/ui components are generated code — disable the
+    // react-refresh rule entirely for them.
+    files: ['src/components/ui/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
   },
 ])
