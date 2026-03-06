@@ -90,6 +90,13 @@ WayOom Bot/
 
    The API will be available at `http://127.0.0.1:8000/` and the admin at `http://127.0.0.1:8000/admin/`.
 
+   **API docs** (only available while `DEBUG=True`):
+   | URL | Description |
+   |-----|-------------|
+   | `http://127.0.0.1:8000/api/schema/` | Raw OpenAPI 3.0 schema (YAML/JSON) |
+   | `http://127.0.0.1:8000/api/schema/swagger-ui/` | Interactive Swagger UI |
+   | `http://127.0.0.1:8000/api/schema/redoc/` | ReDoc documentation |
+
 ### Frontend
 
 - **Prerequisite:** Node.js (e.g. 18+).
@@ -142,8 +149,8 @@ Client Request
 ## Roadmap
 
 - [x] Frontend (scaffold in place)
-- [ ] Serializers for Deck and Card
-- [ ] REST API views with ownership enforcement
-- [ ] JWT authentication
-- [ ] API documentation (OpenAPI / Swagger)
+- [x] Serializers for Deck and Card
+- [x] REST API views with ownership enforcement
+- [x] JWT authentication
+- [x] API documentation (OpenAPI / Swagger)
 - [ ] Connect frontend to API

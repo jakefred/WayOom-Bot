@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+from datetime import timedelta
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -42,6 +43,11 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     # Django defaults...
     "rest_framework",
+    # Generates OpenAPI 3.0 schema and serves Swagger UI / ReDoc.
+    "drf_spectacular",
+    # Token blacklist allows refresh tokens to be invalidated on logout.
+    # Without this, a stolen refresh token could never be revoked before expiry.
+    "rest_framework_simplejwt.token_blacklist",
     "users",
     "wayoom_bot",
 ]
@@ -122,3 +128,44 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# Django REST Framework — global defaults applied to every view.
+# Individual viewsets can override these with their own permission_classes list.
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        # JWT is the primary auth method for the frontend.
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        # Session auth is kept so the Django admin panel and the browsable
+        # API continue to work without a token.
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        # Unauthenticated users may read public content; writes always need a login.
+        "rest_framework.permissions.IsAuthenticatedOrReadOnly",
+    ],
+    # Tells DRF to use drf-spectacular's schema generator for every view,
+    # so the auto-generated OpenAPI doc stays in sync with the live API.
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+# SimpleJWT token lifetimes and rotation policy.
+# - Access tokens are short-lived (15 min) to limit the damage of a leaked token.
+# - Refresh tokens last 7 days; each use rotates to a fresh token and blacklists
+#   the old one, so a stolen refresh token becomes useless after one rotation.
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
+# Metadata displayed at the top of the Swagger UI and ReDoc pages.
+# SERVE_INCLUDE_SCHEMA=False hides the raw /api/schema/ endpoint from
+# its own documentation to avoid a confusing self-referential entry.
+SPECTACULAR_SETTINGS = {
+    "TITLE": "WayOom Bot API",
+    "DESCRIPTION": "REST API for managing flashcard decks and cards.",
+    "VERSION": "0.1.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+}
