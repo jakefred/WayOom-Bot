@@ -16,7 +16,7 @@ WayOom Bot/
 │   ├── wayoom_bot/      # Main application (models, views, serializers, admin)
 │   ├── requirements.txt
 │   └── .env.example
-├── frontend/            # Vite + React + TypeScript; dev server proxies /api to Django
+├── frontend/            # Vite + React + TypeScript + shadcn/ui; dev server proxies /api to Django
 └── README.md
 ```
 
@@ -111,6 +111,8 @@ WayOom Bot/
 
   The app runs at `http://localhost:5173`. Requests to `/api` are proxied to the Django backend at `http://127.0.0.1:8000`, so run both the backend and frontend dev servers when working on features that call the API.
 
+  See [`frontend/README.md`](frontend/README.md) for frontend-specific details (project structure, routes, auth pattern, adding new API calls).
+
 ---
 
 ## Architecture
@@ -153,4 +155,13 @@ Client Request
 - [x] REST API views with ownership enforcement
 - [x] JWT authentication
 - [x] API documentation (OpenAPI / Swagger)
-- [ ] Connect frontend to API
+- [x] Connect frontend to API (auth + deck list/create + card list/create)
+
+**Up next:**
+
+- [ ] Flashcard study mode (flip cards front/back)
+- [ ] Edit and delete decks and cards from the UI
+- [ ] Fix: anonymous users cannot read cards in public decks (GitHub issue #1)
+- [ ] Switch from SQLite to PostgreSQL before production (GitHub issue #4)
+- [ ] Rate limiting on auth endpoints (GitHub issue #3)
+- [ ] Move refresh token from `localStorage` to an `httpOnly` cookie
