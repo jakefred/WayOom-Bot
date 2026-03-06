@@ -130,7 +130,7 @@ class Card(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
     deck = models.ForeignKey(Deck, on_delete=models.CASCADE, related_name="cards")
-    tags = models.JSONField(default=list, validators=[validate_tag_list])
+    tags = models.JSONField(default=list, blank=True, validators=[validate_tag_list])
     front = models.TextField(validators=[MaxLengthValidator(10_000)])
     back = models.TextField(validators=[MaxLengthValidator(10_000)])
     created_at = models.DateTimeField(auto_now_add=True)

@@ -1,8 +1,17 @@
-# WayOom Bot
+# WayOom
 
-> Work in progress — this document will be expanded as the project grows.
+A long-term memory tool designed to be accessible, satisfying to use, and easy to self-host.
 
-A flashcard app with a Django + DRF backend and a React (Vite + TypeScript) frontend.
+WayOom starts as a flashcard app — decks, cards, spaced review — but the vision is broader: a personal memory layer that helps you hold onto what you learn. The kind of tool you open because it works, not because you have to.
+
+---
+
+## Philosophy
+
+- **Start small, scale when you need to.** The app runs on SQLite and a single dev server today. When it's time to go live, swap in PostgreSQL, add a reverse proxy, and deploy — no rewrite required.
+- **Accessible by default.** The UI is built on [shadcn/ui](https://ui.shadcn.com/) for accessible, consistent components. The goal is a clean experience that feels good on desktop and mobile.
+- **Own your stack.** Django + React is a well-understood, well-documented foundation. No exotic dependencies, no vendor lock-in. You can fork it, extend it, or host it yourself.
+- **Security is not an afterthought.** UUID primary keys, ownership-scoped queries, JWT authentication, and environment-based secrets are baked in from the start — not bolted on later.
 
 ---
 
@@ -13,10 +22,10 @@ WayOom Bot/
 ├── backend/
 │   ├── config/          # Django project settings, URLs, WSGI/ASGI
 │   ├── users/           # Custom user model (email-based login)
-│   ├── wayoom_bot/      # Main application (models, views, serializers, admin)
+│   ├── wayoom_bot/      # Core app — models, views, serializers, admin
 │   ├── requirements.txt
 │   └── .env.example
-├── frontend/            # Vite + React + TypeScript + shadcn/ui; dev server proxies /api to Django
+├── frontend/            # Vite + React + TypeScript + shadcn/ui
 └── README.md
 ```
 
@@ -24,11 +33,9 @@ WayOom Bot/
 
 ## Getting Started
 
-### Prerequisites
+### Backend
 
-- Python 3.12+
-
-### Setup
+**Prerequisites:** Python 3.12+
 
 1. **Clone the repository**
 
@@ -61,63 +68,59 @@ WayOom Bot/
    cp backend/.env.example backend/.env
    ```
 
-   Open `backend/.env` and fill in the values. Django does not load `.env` by default, so when you run `manage.py` (migrate, runserver, etc.) you must either set `SECRET_KEY` (and optionally `DEBUG`, `ALLOWED_HOSTS`) in your shell from the values in `backend/.env`, or load `.env` yourself (e.g. with `python-dotenv` in settings). To generate a `SECRET_KEY`:
+   Open `backend/.env` and fill in the values. To generate a `SECRET_KEY`:
 
    ```bash
    python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
    ```
 
-5. **Run migrations**
+   Django does not load `.env` by default — either set the variables in your shell or load them with `python-dotenv`.
+
+5. **Run migrations and start the server**
 
    ```bash
    cd backend
    python manage.py migrate
+   python manage.py runserver
    ```
 
-6. **Create a superuser** (for Django admin access)
+   The API is at `http://127.0.0.1:8000/` and the admin at `http://127.0.0.1:8000/admin/`.
+
+6. **Create a superuser** (optional, for admin access)
 
    ```bash
    python manage.py createsuperuser
    ```
 
-   The prompt asks for **email** (not username) and password, because the project uses a custom user model with email as the login identifier.
-
-7. **Start the development server**
-
-   ```bash
-   python manage.py runserver
-   ```
-
-   The API will be available at `http://127.0.0.1:8000/` and the admin at `http://127.0.0.1:8000/admin/`.
-
-   **API docs** (only available while `DEBUG=True`):
-   | URL | Description |
-   |-----|-------------|
-   | `http://127.0.0.1:8000/api/schema/` | Raw OpenAPI 3.0 schema (YAML/JSON) |
-   | `http://127.0.0.1:8000/api/schema/swagger-ui/` | Interactive Swagger UI |
-   | `http://127.0.0.1:8000/api/schema/redoc/` | ReDoc documentation |
+   The prompt asks for **email** and password — no username, by design.
 
 ### Frontend
 
-- **Prerequisite:** Node.js (e.g. 18+).
+**Prerequisites:** Node.js 18+
 
-- From the project root:
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-  ```bash
-  cd frontend
-  npm install
-  npm run dev
-  ```
+The app runs at `http://localhost:5173`. Requests to `/api` are proxied to the Django backend, so both servers need to be running.
 
-  The app runs at `http://localhost:5173`. Requests to `/api` are proxied to the Django backend at `http://127.0.0.1:8000`, so run both the backend and frontend dev servers when working on features that call the API.
+See [`frontend/README.md`](frontend/README.md) for frontend-specific details.
 
-  See [`frontend/README.md`](frontend/README.md) for frontend-specific details (project structure, routes, auth pattern, adding new API calls).
+### API Documentation
+
+Available when `DEBUG=True`:
+
+| URL | Description |
+|-----|-------------|
+| `/api/schema/` | Raw OpenAPI 3.0 schema |
+| `/api/schema/swagger-ui/` | Interactive Swagger UI |
+| `/api/schema/redoc/` | ReDoc documentation |
 
 ---
 
 ## Architecture
-
-The backend is a standard Django + DRF layered architecture:
 
 ```
 Client Request
@@ -135,33 +138,58 @@ Client Request
    Models         Database schema and data validation
       │
       ▼
-  Database
+  Database        SQLite in development, PostgreSQL in production
 ```
 
-### Key design decisions
+### Key Design Decisions
 
-- **Custom User model** (`users.User`) with **email as the login identifier** (no username required). `createsuperuser` and the admin use email.
-- **UUID primary keys** on all models to prevent ID enumeration attacks.
-- **`DeckQuerySet`** centralizes access control. Views must use `Deck.objects.visible_to(user)` for reads and `Deck.objects.owned_by(user)` for writes — never unscoped queries.
-- **Cards inherit their deck's privacy.** A card should be treated as private if its parent deck is private.
-- **Secrets are read from environment variables**, never hardcoded. See `backend/.env.example`.
+- **Email-based authentication.** The custom user model (`users.User`) uses email as the login identifier. No username field.
+- **UUID primary keys** on all models to prevent ID enumeration.
+- **Ownership-scoped queries.** `DeckQuerySet` centralizes access control. Views use `visible_to(user)` for reads and `owned_by(user)` for writes — never raw, unscoped queries.
+- **Cards inherit deck privacy.** A card is only as public as its parent deck.
+- **Secrets stay out of code.** All sensitive values are read from environment variables.
 
 ---
 
 ## Roadmap
 
-- [x] Frontend (scaffold in place)
-- [x] Serializers for Deck and Card
-- [x] REST API views with ownership enforcement
+### Done
+
+- [x] Custom user model with email login
+- [x] Deck and card models with UUID keys
+- [x] REST API with ownership enforcement
 - [x] JWT authentication
-- [x] API documentation (OpenAPI / Swagger)
-- [x] Connect frontend to API (auth + deck list/create + card list/create)
+- [x] OpenAPI / Swagger documentation
+- [x] Frontend scaffold (auth, deck list/create, card list/create)
 
-**Up next:**
+### In Progress
 
-- [ ] Flashcard study mode (flip cards front/back)
+- [ ] Flashcard study mode — flip cards front/back
 - [ ] Edit and delete decks and cards from the UI
-- [ ] Fix: anonymous users cannot read cards in public decks (GitHub issue #1)
-- [ ] Switch from SQLite to PostgreSQL before production (GitHub issue #4)
-- [ ] Rate limiting on auth endpoints (GitHub issue #3)
+- [ ] Remove the name field from cards ([#12](https://github.com/jakefred/WayOom-Bot/issues/12))
+- [ ] Account recovery and deletion ([#13](https://github.com/jakefred/WayOom-Bot/issues/13))
+- [ ] Frontend design review ([#7](https://github.com/jakefred/WayOom-Bot/issues/7))
+
+### Before Production
+
+- [ ] Fix: anonymous users cannot read cards in public decks ([#1](https://github.com/jakefred/WayOom-Bot/issues/1))
+- [ ] Switch from SQLite to PostgreSQL ([#5](https://github.com/jakefred/WayOom-Bot/issues/5))
+- [ ] Rate limiting on auth endpoints ([#3](https://github.com/jakefred/WayOom-Bot/issues/3))
 - [ ] Move refresh token from `localStorage` to an `httpOnly` cookie
+- [ ] Security review ([#10](https://github.com/jakefred/WayOom-Bot/issues/10))
+- [ ] Testing ([#9](https://github.com/jakefred/WayOom-Bot/issues/9))
+- [ ] CI/CD pipeline ([#14](https://github.com/jakefred/WayOom-Bot/issues/14))
+- [ ] Documentation pass ([#8](https://github.com/jakefred/WayOom-Bot/issues/8))
+
+### Long Term
+
+- Spaced repetition scheduling
+- Rich card content (images, markdown, audio)
+- Mobile-friendly experience
+- Public deck sharing and discovery
+
+---
+
+## Built With
+
+This project was built with the help of [Cursor](https://cursor.com/) and [Claude Code](https://claude.ai/claude-code).
