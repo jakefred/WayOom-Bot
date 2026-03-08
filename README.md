@@ -163,7 +163,7 @@ Client Request
 - [x] JWT authentication
 - [x] OpenAPI / Swagger documentation
 - [x] Frontend scaffold — auth, deck list/create, card list/create ([#6](https://github.com/jakefred/WayOom-Bot/issues/6))
-- [x] Model and view test suite — 82 tests ([#9](https://github.com/jakefred/WayOom-Bot/issues/9))
+- [x] Model and view test suite — 127 tests ([#9](https://github.com/jakefred/WayOom-Bot/issues/9))
 - [x] CI pipeline — GitHub Actions runs tests and lint on every push/PR ([#14](https://github.com/jakefred/WayOom-Bot/issues/14))
 - [x] Remove the name field from cards ([#12](https://github.com/jakefred/WayOom-Bot/issues/12))
 
@@ -178,6 +178,15 @@ Expanding the Card model so importing from Anki is lossless and users don't feel
 - [ ] **HTML rendering** — Anki fields contain HTML. Render `front`, `back`, and `extra` as sanitized HTML in the frontend (DOMPurify) instead of plain text.
 - [ ] **Anki `.apkg` import** — `POST /api/import/apkg/` endpoint + frontend upload UI. Converts Anki decks and notes into WayOom Decks and Cards. Supports all three `.apkg` format versions including zstd-compressed `.anki21b`.
 - [ ] **Media attachments** — `CardMedia` model linking files (images, audio) to cards. Required for full `.apkg` import fidelity.
+
+### Housekeeping — First Thing Tomorrow
+
+- [ ] Commit the PostgreSQL switch (`settings.py` + `requirements.txt`) — changes are done but unstaged
+- [ ] Quote `SECRET_KEY` in `backend/.env` to fix `source .env` in bash
+- [ ] Run `pip install -r backend/requirements.txt` to install `psycopg2-binary` in the venv
+- [ ] Add `*.code-workspace` to `.gitignore`
+- [ ] Move `tmp_issue_body.md` to `docs/apkg-import-spec.md` or add to `.gitignore`
+- [ ] Commit the `tags` fix in `CardAdmin.search_fields` (accidentally dropped during extra_notes step)
 
 ### Short Term — Core Experience
 

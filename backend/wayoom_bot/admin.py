@@ -35,5 +35,5 @@ class CardAdmin(admin.ModelAdmin):
 
     list_display = ["__str__", "card_type", "status", "flag", "deck", "due_date", "created_at"]
     list_filter = ["deck", "card_type", "status", "flag"]
-    search_fields = ["front", "back", "extra_notes"]
+    search_fields = ["tags", "front", "back", "extra_notes"]
     readonly_fields = ["id", "created_at", "updated_at"]
