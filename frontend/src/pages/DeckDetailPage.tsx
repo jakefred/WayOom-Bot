@@ -169,9 +169,12 @@ export default function DeckDetailPage() {
             {cards.map((card) => (
               <UiCard key={card.id}>
                 <CardContent className="space-y-3 pt-6">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
                     <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
                       {card.card_type === "basic_reversed" ? "Basic (Reversed)" : card.card_type === "cloze" ? "Cloze" : "Basic"}
+                    </span>
+                    <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground capitalize">
+                      {card.status}
                     </span>
                   </div>
                   <div>

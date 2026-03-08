@@ -163,6 +163,13 @@ class Card(models.Model):
         BASIC_REVERSED = "basic_reversed", "Basic (Reversed)"
         CLOZE = "cloze", "Cloze"
 
+    class CardStatus(models.TextChoices):
+        NEW = "new", "New"
+        LEARNING = "learning", "Learning"
+        REVIEW = "review", "Review"
+        SUSPENDED = "suspended", "Suspended"
+        BURIED = "buried", "Buried"
+
     # UUID prevents ID enumeration (same reasoning as Deck).
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     deck = models.ForeignKey(Deck, on_delete=models.CASCADE, related_name="cards")
@@ -175,6 +182,19 @@ class Card(models.Model):
     front = models.TextField(validators=[MaxLengthValidator(10_000)])
     back = models.TextField(blank=True, validators=[MaxLengthValidator(10_000)])
     extra_notes = models.JSONField(default=list, blank=True, validators=[validate_extra_notes])
+
+    # Spaced repetition fields — populated by the SR algorithm and preserved on import.
+    status = models.CharField(
+        max_length=20,
+        choices=CardStatus.choices,
+        default=CardStatus.NEW,
+    )
+    due_date = models.DateTimeField(null=True, blank=True)
+    interval = models.PositiveIntegerField(default=0)       # days until next review
+    ease_factor = models.FloatField(default=2.5)            # interval multiplier (Anki default)
+    review_count = models.PositiveIntegerField(default=0)   # total reviews completed
+    lapse_count = models.PositiveIntegerField(default=0)    # times forgotten (review → relearn)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -17,15 +17,22 @@ export interface Deck {
 }
 
 export type CardType = "basic" | "basic_reversed" | "cloze";
+export type CardStatus = "new" | "learning" | "review" | "suspended" | "buried";
 
 export interface Card {
   id: string;
   deck: string;
   card_type: CardType;
+  status: CardStatus;
   front: string;
   back: string;
   tags: string[];
   extra_notes: string[];
+  due_date: string | null;
+  interval: number;
+  ease_factor: number;
+  review_count: number;
+  lapse_count: number;
   created_at: string;
   updated_at: string;
 }

@@ -203,6 +203,40 @@ class CardModelTests(TestCase):
         with self.assertRaises(ValidationError):
             card.full_clean()
 
+    def test_status_defaults_to_new(self):
+        card = Card.objects.create(deck=self.deck, front="F", back="B")
+        self.assertEqual(card.status, Card.CardStatus.NEW)
+
+    def test_status_valid_choices(self):
+        for choice in Card.CardStatus.values:
+            card = Card(deck=self.deck, front="F", back="B", status=choice)
+            card.full_clean()  # should not raise
+
+    def test_status_invalid_value_raises(self):
+        card = Card(deck=self.deck, front="F", back="B", status="invalid")
+        with self.assertRaises(ValidationError):
+            card.full_clean()
+
+    def test_due_date_defaults_to_null(self):
+        card = Card.objects.create(deck=self.deck, front="F", back="B")
+        self.assertIsNone(card.due_date)
+
+    def test_interval_defaults_to_zero(self):
+        card = Card.objects.create(deck=self.deck, front="F", back="B")
+        self.assertEqual(card.interval, 0)
+
+    def test_ease_factor_defaults_to_2_5(self):
+        card = Card.objects.create(deck=self.deck, front="F", back="B")
+        self.assertAlmostEqual(card.ease_factor, 2.5)
+
+    def test_review_count_defaults_to_zero(self):
+        card = Card.objects.create(deck=self.deck, front="F", back="B")
+        self.assertEqual(card.review_count, 0)
+
+    def test_lapse_count_defaults_to_zero(self):
+        card = Card.objects.create(deck=self.deck, front="F", back="B")
+        self.assertEqual(card.lapse_count, 0)
+
     def test_extra_notes_default_to_empty_list(self):
         card = Card.objects.create(deck=self.deck, front="F", back="B")
         self.assertEqual(card.extra_notes, [])
@@ -546,6 +580,47 @@ class CardViewCreateTests(APITestCase):
             "front": "Q",
             "back": "A",
             "card_type": "invalid",
+        })
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_sr_fields_default_values_in_response(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(card_list_url(self.alice_deck.id), {
+            "front": "Q",
+            "back": "A",
+        })
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["status"], "new")
+        self.assertIsNone(resp.data["due_date"])
+        self.assertEqual(resp.data["interval"], 0)
+        self.assertAlmostEqual(float(resp.data["ease_factor"]), 2.5)
+        self.assertEqual(resp.data["review_count"], 0)
+        self.assertEqual(resp.data["lapse_count"], 0)
+
+    def test_sr_fields_can_be_set_on_create(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(card_list_url(self.alice_deck.id), {
+            "front": "Q",
+            "back": "A",
+            "status": "review",
+            "interval": 14,
+            "ease_factor": 2.3,
+            "review_count": 5,
+            "lapse_count": 1,
+        }, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["status"], "review")
+        self.assertEqual(resp.data["interval"], 14)
+        self.assertAlmostEqual(float(resp.data["ease_factor"]), 2.3)
+        self.assertEqual(resp.data["review_count"], 5)
+        self.assertEqual(resp.data["lapse_count"], 1)
+
+    def test_status_invalid_value_rejected_by_api(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(card_list_url(self.alice_deck.id), {
+            "front": "Q",
+            "back": "A",
+            "status": "invalid",
         })
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
 
