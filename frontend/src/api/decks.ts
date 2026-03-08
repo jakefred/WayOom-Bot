@@ -16,9 +16,12 @@ export interface Deck {
   updated_at: string;
 }
 
+export type CardType = "basic" | "basic_reversed" | "cloze";
+
 export interface Card {
   id: string;
   deck: string;
+  card_type: CardType;
   front: string;
   back: string;
   tags: string[];
@@ -88,7 +91,7 @@ export async function apiListCards(
 export async function apiCreateCard(
   access: string,
   deckId: string,
-  data: { front: string; back: string; tags?: string[]; extra_notes?: string[] },
+  data: { front: string; back: string; card_type?: CardType; tags?: string[]; extra_notes?: string[] },
 ): Promise<Card> {
   const res = await fetch(`/api/decks/${deckId}/cards/`, {
     method: "POST",

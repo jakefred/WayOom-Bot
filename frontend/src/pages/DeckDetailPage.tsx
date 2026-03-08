@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { apiListCards, apiCreateCard, type Card } from "@/api/decks";
+import { apiListCards, apiCreateCard, type Card, type CardType } from "@/api/decks";
 import {
   Card as UiCard,
   CardContent,
@@ -21,6 +21,7 @@ export default function DeckDetailPage() {
   const [showForm, setShowForm] = useState(false);
 
   // New card form state
+  const [cardType, setCardType] = useState<CardType>("basic");
   const [cardFront, setCardFront] = useState("");
   const [cardBack, setCardBack] = useState("");
   const [cardTagsRaw, setCardTagsRaw] = useState("");
@@ -50,11 +51,13 @@ export default function DeckDetailPage() {
 
     try {
       const newCard = await apiCreateCard(access, deckId, {
+        card_type: cardType,
         front: cardFront,
         back: cardBack,
         tags,
       });
       setCards((prev) => [newCard, ...prev]);
+      setCardType("basic");
       setCardFront("");
       setCardBack("");
       setCardTagsRaw("");
@@ -101,6 +104,19 @@ export default function DeckDetailPage() {
                     {formError}
                   </p>
                 )}
+                <div className="space-y-1">
+                  <Label htmlFor="card-type">Card type</Label>
+                  <select
+                    id="card-type"
+                    value={cardType}
+                    onChange={(e) => setCardType(e.target.value as CardType)}
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                  >
+                    <option value="basic">Basic</option>
+                    <option value="basic_reversed">Basic (Reversed)</option>
+                    <option value="cloze">Cloze</option>
+                  </select>
+                </div>
                 <div className="space-y-1">
                   <Label htmlFor="card-front">Front</Label>
                   <Input
@@ -153,6 +169,11 @@ export default function DeckDetailPage() {
             {cards.map((card) => (
               <UiCard key={card.id}>
                 <CardContent className="space-y-3 pt-6">
+                  <div className="flex items-center justify-between">
+                    <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
+                      {card.card_type === "basic_reversed" ? "Basic (Reversed)" : card.card_type === "cloze" ? "Cloze" : "Basic"}
+                    </span>
+                  </div>
                   <div>
                     <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       Front

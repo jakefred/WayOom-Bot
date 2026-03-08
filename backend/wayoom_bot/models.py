@@ -158,12 +158,22 @@ class Card(models.Model):
     Use Card.objects.visible_to(user) for reads and owned_by(user) for writes.
     """
 
+    class CardType(models.TextChoices):
+        BASIC = "basic", "Basic"
+        BASIC_REVERSED = "basic_reversed", "Basic (Reversed)"
+        CLOZE = "cloze", "Cloze"
+
     # UUID prevents ID enumeration (same reasoning as Deck).
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     deck = models.ForeignKey(Deck, on_delete=models.CASCADE, related_name="cards")
+    card_type = models.CharField(
+        max_length=20,
+        choices=CardType.choices,
+        default=CardType.BASIC,
+    )
     tags = models.JSONField(default=list, blank=True, validators=[validate_tag_list])
     front = models.TextField(validators=[MaxLengthValidator(10_000)])
-    back = models.TextField(validators=[MaxLengthValidator(10_000)])
+    back = models.TextField(blank=True, validators=[MaxLengthValidator(10_000)])
     extra_notes = models.JSONField(default=list, blank=True, validators=[validate_extra_notes])
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

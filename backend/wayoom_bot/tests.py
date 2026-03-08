@@ -186,6 +186,23 @@ class CardModelTests(TestCase):
         with self.assertRaises(ValidationError):
             card.full_clean()
 
+    def test_card_type_defaults_to_basic(self):
+        card = Card.objects.create(deck=self.deck, front="F", back="B")
+        self.assertEqual(card.card_type, Card.CardType.BASIC)
+
+    def test_card_type_basic_reversed_is_valid(self):
+        card = Card(deck=self.deck, front="F", back="B", card_type=Card.CardType.BASIC_REVERSED)
+        card.full_clean()  # should not raise
+
+    def test_card_type_cloze_is_valid(self):
+        card = Card(deck=self.deck, front="{{c1::answer}}", back="", card_type=Card.CardType.CLOZE)
+        card.full_clean()  # should not raise
+
+    def test_card_type_invalid_value_raises(self):
+        card = Card(deck=self.deck, front="F", back="B", card_type="invalid")
+        with self.assertRaises(ValidationError):
+            card.full_clean()
+
     def test_extra_notes_default_to_empty_list(self):
         card = Card.objects.create(deck=self.deck, front="F", back="B")
         self.assertEqual(card.extra_notes, [])
@@ -503,6 +520,34 @@ class CardViewCreateTests(APITestCase):
         })
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
         self.assertEqual(resp.data["tags"], [])
+
+    def test_card_type_defaults_to_basic_in_response(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(card_list_url(self.alice_deck.id), {
+            "front": "Q",
+            "back": "A",
+        })
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["card_type"], "basic")
+
+    def test_card_type_can_be_set_on_create(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(card_list_url(self.alice_deck.id), {
+            "front": "{{c1::answer}}",
+            "back": "",
+            "card_type": "cloze",
+        })
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["card_type"], "cloze")
+
+    def test_card_type_invalid_value_rejected(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(card_list_url(self.alice_deck.id), {
+            "front": "Q",
+            "back": "A",
+            "card_type": "invalid",
+        })
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_card_extra_notes_default_to_empty(self):
         self.client.force_authenticate(self.alice)

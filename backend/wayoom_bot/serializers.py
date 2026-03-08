@@ -31,6 +31,7 @@ class CardSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "deck",
+            "card_type",
             "tags",
             "front",
             "back",
@@ -43,7 +44,7 @@ class CardSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "deck", "created_at", "updated_at"]
         extra_kwargs = {
             "front": {"max_length": 10_000},
-            "back": {"max_length": 10_000},
+            "back": {"max_length": 10_000, "allow_blank": True},
         }
 
     def validate_extra_notes(self, value):
