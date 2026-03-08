@@ -171,8 +171,8 @@ Client Request
 
 Expanding the Card model so importing from Anki is lossless and users don't feel like they downgraded. See `docs/adding-model-fields.md` for the field-change checklist.
 
-- [ ] **Card type** — `card_type` field: `basic`, `basic_reversed`, `cloze`. Determines how the card is studied and maps to Anki's note types.
-- [ ] **Extra field** — `extra` TextField for additional context shown after answering. Maps to Anki's "Extra" field (field[2] in multi-field notes).
+- [x] **Card type** — `card_type` field: `basic`, `basic_reversed`, `cloze`. Determines how the card is studied and maps to Anki's note types.
+- [x] **Extra field** — `extra_notes` JSON list mapping to Anki's `flds[2+]` — ordered additional fields for context, hints, and supplementary answers.
 - [ ] **Spaced repetition fields** — `status` (new/learning/review/suspended/buried), `due_date`, `interval`, `ease_factor`, `review_count`, `lapse_count`. Stores scheduling state so imported Anki data is preserved and WayOom can run its own SR algorithm later.
 - [ ] **Organization fields** — `flag` (0–7 color flags, matches Anki) and `position` (manual ordering within a deck).
 - [ ] **HTML rendering** — Anki fields contain HTML. Render `front`, `back`, and `extra` as sanitized HTML in the frontend (DOMPurify) instead of plain text.
