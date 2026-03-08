@@ -24,7 +24,6 @@ class CardSerializer(serializers.ModelSerializer):
         model = Card
         fields = [
             "id",
-            "name",
             "deck",
             "tags",
             "front",

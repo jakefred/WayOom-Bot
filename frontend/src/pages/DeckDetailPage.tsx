@@ -21,7 +21,6 @@ export default function DeckDetailPage() {
   const [showForm, setShowForm] = useState(false);
 
   // New card form state
-  const [cardName, setCardName] = useState("");
   const [cardFront, setCardFront] = useState("");
   const [cardBack, setCardBack] = useState("");
   const [cardTagsRaw, setCardTagsRaw] = useState("");
@@ -51,13 +50,11 @@ export default function DeckDetailPage() {
 
     try {
       const newCard = await apiCreateCard(access, deckId, {
-        name: cardName,
         front: cardFront,
         back: cardBack,
         tags,
       });
       setCards((prev) => [newCard, ...prev]);
-      setCardName("");
       setCardFront("");
       setCardBack("");
       setCardTagsRaw("");
@@ -104,16 +101,6 @@ export default function DeckDetailPage() {
                     {formError}
                   </p>
                 )}
-                <div className="space-y-1">
-                  <Label htmlFor="card-name">Card name</Label>
-                  <Input
-                    id="card-name"
-                    required
-                    value={cardName}
-                    onChange={(e) => setCardName(e.target.value)}
-                    placeholder="e.g. What is photosynthesis?"
-                  />
-                </div>
                 <div className="space-y-1">
                   <Label htmlFor="card-front">Front</Label>
                   <Input
@@ -165,10 +152,7 @@ export default function DeckDetailPage() {
           <div className="space-y-4">
             {cards.map((card) => (
               <UiCard key={card.id}>
-                <CardHeader>
-                  <CardTitle className="text-base">{card.name}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent className="space-y-3 pt-6">
                   <div>
                     <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       Front

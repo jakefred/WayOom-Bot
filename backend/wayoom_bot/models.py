@@ -128,7 +128,6 @@ class Card(models.Model):
 
     # UUID prevents ID enumeration (same reasoning as Deck).
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    name = models.CharField(max_length=255)
     deck = models.ForeignKey(Deck, on_delete=models.CASCADE, related_name="cards")
     tags = models.JSONField(default=list, blank=True, validators=[validate_tag_list])
     front = models.TextField(validators=[MaxLengthValidator(10_000)])
@@ -146,7 +145,7 @@ class Card(models.Model):
         ]
 
     def __str__(self):
-        return self.name
+        return self.front[:50]
 
     def __repr__(self):
-        return f"<Card id={self.id} name={self.name!r} deck_id={self.deck_id}>"
+        return f"<Card id={self.id} front={self.front[:30]!r} deck_id={self.deck_id}>"

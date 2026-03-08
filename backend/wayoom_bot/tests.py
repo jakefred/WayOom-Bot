@@ -96,7 +96,7 @@ class DeckModelTests(TestCase):
 
     def test_cascade_delete_removes_cards(self):
         deck = Deck.objects.create(name="Test", user=self.user)
-        Card.objects.create(name="Card", deck=deck, front="F", back="B")
+        Card.objects.create(deck=deck, front="F", back="B")
         deck.delete()
         self.assertEqual(Card.objects.count(), 0)
 
@@ -112,33 +112,37 @@ class CardModelTests(TestCase):
         cls.deck = Deck.objects.create(name="Test Deck", user=cls.user)
 
     def test_uuid_primary_key_auto_generated(self):
-        card = Card.objects.create(name="C", deck=self.deck, front="F", back="B")
+        card = Card.objects.create(deck=self.deck, front="F", back="B")
         self.assertIsNotNone(card.id)
 
-    def test_str_returns_name(self):
-        card = Card.objects.create(name="My Card", deck=self.deck, front="F", back="B")
-        self.assertEqual(str(card), "My Card")
+    def test_str_returns_truncated_front(self):
+        card = Card.objects.create(deck=self.deck, front="My front text", back="B")
+        self.assertEqual(str(card), "My front text")
+
+    def test_str_truncates_long_front(self):
+        card = Card.objects.create(deck=self.deck, front="a" * 100, back="B")
+        self.assertEqual(str(card), "a" * 50)
 
     def test_tags_default_to_empty_list(self):
-        card = Card.objects.create(name="C", deck=self.deck, front="F", back="B")
+        card = Card.objects.create(deck=self.deck, front="F", back="B")
         self.assertEqual(card.tags, [])
 
     def test_front_max_length_valid(self):
-        card = Card(name="C", deck=self.deck, front="a" * 10_000, back="B")
+        card = Card(deck=self.deck, front="a" * 10_000, back="B")
         card.full_clean()  # should not raise
 
     def test_front_exceeding_max_length_raises(self):
-        card = Card(name="C", deck=self.deck, front="a" * 10_001, back="B")
+        card = Card(deck=self.deck, front="a" * 10_001, back="B")
         with self.assertRaises(ValidationError):
             card.full_clean()
 
     def test_back_exceeding_max_length_raises(self):
-        card = Card(name="C", deck=self.deck, front="F", back="a" * 10_001)
+        card = Card(deck=self.deck, front="F", back="a" * 10_001)
         with self.assertRaises(ValidationError):
             card.full_clean()
 
     def test_invalid_tags_caught_by_full_clean(self):
-        card = Card(name="C", deck=self.deck, front="F", back="B", tags="not a list")
+        card = Card(deck=self.deck, front="F", back="B", tags="not a list")
         with self.assertRaises(ValidationError):
             card.full_clean()
 
@@ -201,16 +205,16 @@ class CardQuerySetTests(TestCase):
         cls.bob_public_deck = Deck.objects.create(name="B Pub", user=cls.bob, is_public=True)
 
         cls.card_alice_private = Card.objects.create(
-            name="C1", deck=cls.alice_private_deck, front="F", back="B"
+            deck=cls.alice_private_deck, front="F", back="B"
         )
         cls.card_alice_public = Card.objects.create(
-            name="C2", deck=cls.alice_public_deck, front="F", back="B"
+            deck=cls.alice_public_deck, front="F", back="B"
         )
         cls.card_bob_private = Card.objects.create(
-            name="C3", deck=cls.bob_private_deck, front="F", back="B"
+            deck=cls.bob_private_deck, front="F", back="B"
         )
         cls.card_bob_public = Card.objects.create(
-            name="C4", deck=cls.bob_public_deck, front="F", back="B"
+            deck=cls.bob_public_deck, front="F", back="B"
         )
 
     def test_visible_to_returns_own_and_public_deck_cards(self):
@@ -370,8 +374,8 @@ class CardViewListTests(APITestCase):
         cls.bob = User.objects.create_user(email="bob@example.com", password="pass1234")
         cls.alice_deck = Deck.objects.create(name="A Deck", user=cls.alice)
         cls.bob_deck = Deck.objects.create(name="B Deck", user=cls.bob, is_public=False)
-        cls.alice_card = Card.objects.create(name="AC", deck=cls.alice_deck, front="F", back="B")
-        cls.bob_card = Card.objects.create(name="BC", deck=cls.bob_deck, front="F", back="B")
+        cls.alice_card = Card.objects.create(deck=cls.alice_deck, front="F", back="B")
+        cls.bob_card = Card.objects.create(deck=cls.bob_deck, front="F", back="B")
 
     def test_owner_can_list_cards(self):
         self.client.force_authenticate(self.alice)
@@ -401,7 +405,6 @@ class CardViewCreateTests(APITestCase):
     def test_owner_can_create_card(self):
         self.client.force_authenticate(self.alice)
         resp = self.client.post(card_list_url(self.alice_deck.id), {
-            "name": "New Card",
             "front": "Question",
             "back": "Answer",
         })
@@ -411,7 +414,6 @@ class CardViewCreateTests(APITestCase):
     def test_non_owner_cannot_create_card_in_others_deck(self):
         self.client.force_authenticate(self.alice)
         resp = self.client.post(card_list_url(self.bob_deck.id), {
-            "name": "Sneaky",
             "front": "Q",
             "back": "A",
         })
@@ -419,7 +421,6 @@ class CardViewCreateTests(APITestCase):
 
     def test_anonymous_cannot_create_card(self):
         resp = self.client.post(card_list_url(self.alice_deck.id), {
-            "name": "Nope",
             "front": "Q",
             "back": "A",
         })
@@ -428,7 +429,6 @@ class CardViewCreateTests(APITestCase):
     def test_card_tags_default_to_empty(self):
         self.client.force_authenticate(self.alice)
         resp = self.client.post(card_list_url(self.alice_deck.id), {
-            "name": "No Tags",
             "front": "Q",
             "back": "A",
         })
@@ -444,10 +444,10 @@ class CardViewUpdateDeleteTests(APITestCase):
         cls.alice_private_deck = Deck.objects.create(name="A Priv", user=cls.alice, is_public=False)
         cls.alice_public_deck = Deck.objects.create(name="A Pub", user=cls.alice, is_public=True)
         cls.private_card = Card.objects.create(
-            name="PC", deck=cls.alice_private_deck, front="F", back="B"
+            deck=cls.alice_private_deck, front="F", back="B"
         )
         cls.public_card = Card.objects.create(
-            name="PubC", deck=cls.alice_public_deck, front="F", back="B"
+            deck=cls.alice_public_deck, front="F", back="B"
         )
 
     def test_owner_can_update_card(self):

@@ -18,7 +18,6 @@ export interface Deck {
 
 export interface Card {
   id: string;
-  name: string;
   deck: string;
   front: string;
   back: string;
@@ -88,7 +87,7 @@ export async function apiListCards(
 export async function apiCreateCard(
   access: string,
   deckId: string,
-  data: { name: string; front: string; back: string; tags?: string[] },
+  data: { front: string; back: string; tags?: string[] },
 ): Promise<Card> {
   const res = await fetch(`/api/decks/${deckId}/cards/`, {
     method: "POST",

@@ -14,7 +14,7 @@ class CardInline(admin.TabularInline):
     model = Card
     extra = 0  # don't show empty placeholder rows
     readonly_fields = ["id", "created_at", "updated_at"]
-    fields = ["name", "tags", "front", "back"]
+    fields = ["tags", "front", "back"]
 
 
 @admin.register(Deck)
@@ -32,7 +32,7 @@ class DeckAdmin(admin.ModelAdmin):
 class CardAdmin(admin.ModelAdmin):
     """Admin configuration for Card."""
 
-    list_display = ["name", "deck", "created_at"]
+    list_display = ["__str__", "deck", "created_at"]
     list_filter = ["deck"]
-    search_fields = ["name", "tags", "front", "back"]
+    search_fields = ["tags", "front", "back"]
     readonly_fields = ["id", "created_at", "updated_at"]
