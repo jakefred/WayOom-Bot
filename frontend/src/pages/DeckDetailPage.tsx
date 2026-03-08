@@ -165,6 +165,15 @@ export default function DeckDetailPage() {
                     </p>
                     <p className="text-sm">{card.back}</p>
                   </div>
+                  {card.extra_notes.length > 0 && (
+                    <div className="space-y-2 border-t pt-3">
+                      {card.extra_notes.map((note, i) => (
+                        <p key={i} className="text-sm text-muted-foreground">
+                          {note}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                   {card.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {card.tags.map((tag) => (

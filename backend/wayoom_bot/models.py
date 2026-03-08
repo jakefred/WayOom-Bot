@@ -9,6 +9,38 @@ import uuid
 
 MAX_TAGS_PER_CARD = 50
 MAX_TAG_LENGTH = 100
+MAX_EXTRA_NOTES = 20
+MAX_EXTRA_NOTE_LENGTH = 10_000
+
+
+def validate_extra_notes(value):
+    """Ensure extra_notes is an ordered list of strings.
+
+    Limits:
+    - At most MAX_EXTRA_NOTES (20) items per card.
+    - Each item must be a string of at most MAX_EXTRA_NOTE_LENGTH (10,000) chars.
+    - Blank strings are allowed — Anki fields can be empty.
+
+    These limits are enforced at the model layer so they apply everywhere data
+    is saved, not just through the API serializer.
+    """
+    if not isinstance(value, list):
+        raise ValidationError("Extra notes must be a list.")
+    if len(value) > MAX_EXTRA_NOTES:
+        raise ValidationError(
+            f"A card can have at most {MAX_EXTRA_NOTES} extra notes. "
+            f"Got {len(value)}."
+        )
+    for note in value:
+        if not isinstance(note, str):
+            raise ValidationError(
+                f"Each extra note must be a string. Got {type(note).__name__}."
+            )
+        if len(note) > MAX_EXTRA_NOTE_LENGTH:
+            raise ValidationError(
+                f"Each extra note must be at most {MAX_EXTRA_NOTE_LENGTH} characters. "
+                f"Got a note of length {len(note)}."
+            )
 
 
 def validate_tag_list(value):
@@ -132,6 +164,7 @@ class Card(models.Model):
     tags = models.JSONField(default=list, blank=True, validators=[validate_tag_list])
     front = models.TextField(validators=[MaxLengthValidator(10_000)])
     back = models.TextField(validators=[MaxLengthValidator(10_000)])
+    extra_notes = models.JSONField(default=list, blank=True, validators=[validate_extra_notes])
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

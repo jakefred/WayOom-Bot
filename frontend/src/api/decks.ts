@@ -22,6 +22,7 @@ export interface Card {
   front: string;
   back: string;
   tags: string[];
+  extra_notes: string[];
   created_at: string;
   updated_at: string;
 }
@@ -87,7 +88,7 @@ export async function apiListCards(
 export async function apiCreateCard(
   access: string,
   deckId: string,
-  data: { front: string; back: string; tags?: string[] },
+  data: { front: string; back: string; tags?: string[]; extra_notes?: string[] },
 ): Promise<Card> {
   const res = await fetch(`/api/decks/${deckId}/cards/`, {
     method: "POST",

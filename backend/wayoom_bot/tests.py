@@ -7,8 +7,11 @@ from rest_framework.test import APITestCase
 from wayoom_bot.models import (
     Card,
     Deck,
+    MAX_EXTRA_NOTE_LENGTH,
+    MAX_EXTRA_NOTES,
     MAX_TAG_LENGTH,
     MAX_TAGS_PER_CARD,
+    validate_extra_notes,
     validate_tag_list,
 )
 
@@ -55,6 +58,43 @@ class ValidateTagListTests(TestCase):
 
     def test_max_tags_is_valid(self):
         validate_tag_list(["tag"] * MAX_TAGS_PER_CARD)  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# validate_extra_notes (standalone validator)
+# ---------------------------------------------------------------------------
+
+class ValidateExtraNotesTests(TestCase):
+    def test_valid_notes(self):
+        validate_extra_notes(["Some context.", "Source: p.42"])  # should not raise
+
+    def test_empty_list_is_valid(self):
+        validate_extra_notes([])  # should not raise
+
+    def test_blank_string_is_valid(self):
+        validate_extra_notes([""])  # Anki fields can be empty
+
+    def test_non_list_raises(self):
+        with self.assertRaises(ValidationError):
+            validate_extra_notes("not a list")
+
+    def test_non_string_item_raises(self):
+        with self.assertRaises(ValidationError):
+            validate_extra_notes(["valid", 123])
+
+    def test_item_exceeding_max_length_raises(self):
+        with self.assertRaises(ValidationError):
+            validate_extra_notes(["a" * (MAX_EXTRA_NOTE_LENGTH + 1)])
+
+    def test_item_at_max_length_is_valid(self):
+        validate_extra_notes(["a" * MAX_EXTRA_NOTE_LENGTH])  # should not raise
+
+    def test_too_many_notes_raises(self):
+        with self.assertRaises(ValidationError):
+            validate_extra_notes(["note"] * (MAX_EXTRA_NOTES + 1))
+
+    def test_max_notes_is_valid(self):
+        validate_extra_notes(["note"] * MAX_EXTRA_NOTES)  # should not raise
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +183,35 @@ class CardModelTests(TestCase):
 
     def test_invalid_tags_caught_by_full_clean(self):
         card = Card(deck=self.deck, front="F", back="B", tags="not a list")
+        with self.assertRaises(ValidationError):
+            card.full_clean()
+
+    def test_extra_notes_default_to_empty_list(self):
+        card = Card.objects.create(deck=self.deck, front="F", back="B")
+        self.assertEqual(card.extra_notes, [])
+
+    def test_extra_notes_stores_ordered_list(self):
+        notes = ["Extra context.", "Source: p.42"]
+        card = Card.objects.create(deck=self.deck, front="F", back="B", extra_notes=notes)
+        card.refresh_from_db()
+        self.assertEqual(card.extra_notes, notes)
+
+    def test_extra_notes_allows_blank_strings(self):
+        card = Card(deck=self.deck, front="F", back="B", extra_notes=[""])
+        card.full_clean()  # should not raise
+
+    def test_extra_notes_item_exceeding_max_length_raises(self):
+        card = Card(deck=self.deck, front="F", back="B", extra_notes=["a" * (MAX_EXTRA_NOTE_LENGTH + 1)])
+        with self.assertRaises(ValidationError):
+            card.full_clean()
+
+    def test_too_many_extra_notes_raises(self):
+        card = Card(deck=self.deck, front="F", back="B", extra_notes=["note"] * (MAX_EXTRA_NOTES + 1))
+        with self.assertRaises(ValidationError):
+            card.full_clean()
+
+    def test_invalid_extra_notes_caught_by_full_clean(self):
+        card = Card(deck=self.deck, front="F", back="B", extra_notes="not a list")
         with self.assertRaises(ValidationError):
             card.full_clean()
 
@@ -434,6 +503,25 @@ class CardViewCreateTests(APITestCase):
         })
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
         self.assertEqual(resp.data["tags"], [])
+
+    def test_card_extra_notes_default_to_empty(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(card_list_url(self.alice_deck.id), {
+            "front": "Q",
+            "back": "A",
+        })
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["extra_notes"], [])
+
+    def test_card_extra_notes_saved_and_returned(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(card_list_url(self.alice_deck.id), {
+            "front": "Q",
+            "back": "A",
+            "extra_notes": ["Hint: think about osmosis.", "Source: Ch. 3"],
+        }, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["extra_notes"], ["Hint: think about osmosis.", "Source: Ch. 3"])
 
 
 class CardViewUpdateDeleteTests(APITestCase):

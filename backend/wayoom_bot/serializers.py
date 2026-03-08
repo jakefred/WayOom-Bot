@@ -19,6 +19,12 @@ class CardSerializer(serializers.ModelSerializer):
         required=False,
         default=list,
     )
+    extra_notes = serializers.ListField(
+        child=serializers.CharField(max_length=10_000, allow_blank=True),
+        allow_empty=True,
+        required=False,
+        default=list,
+    )
 
     class Meta:
         model = Card
@@ -28,6 +34,7 @@ class CardSerializer(serializers.ModelSerializer):
             "tags",
             "front",
             "back",
+            "extra_notes",
             "created_at",
             "updated_at",
         ]
@@ -38,6 +45,21 @@ class CardSerializer(serializers.ModelSerializer):
             "front": {"max_length": 10_000},
             "back": {"max_length": 10_000},
         }
+
+    def validate_extra_notes(self, value):
+        """Require a list of strings. Blank strings are allowed — Anki fields can be empty."""
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Extra notes must be a list.")
+        for note in value:
+            if not isinstance(note, str):
+                raise serializers.ValidationError(
+                    f"Each extra note must be a string. Got {type(note).__name__}."
+                )
+            if len(note) > 10_000:
+                raise serializers.ValidationError(
+                    "Each extra note must be at most 10,000 characters."
+                )
+        return value
 
     def validate_tags(self, value):
         """Require a list of non-empty strings. Prevents malformed or abusive payloads."""
