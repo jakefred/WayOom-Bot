@@ -203,6 +203,29 @@ class CardModelTests(TestCase):
         with self.assertRaises(ValidationError):
             card.full_clean()
 
+    def test_flag_defaults_to_zero(self):
+        card = Card.objects.create(deck=self.deck, front="F", back="B")
+        self.assertEqual(card.flag, 0)
+
+    def test_flag_valid_range(self):
+        for value in range(8):  # 0-7 inclusive
+            card = Card(deck=self.deck, front="F", back="B", flag=value)
+            card.full_clean()  # should not raise
+
+    def test_flag_above_max_raises(self):
+        card = Card(deck=self.deck, front="F", back="B", flag=8)
+        with self.assertRaises(ValidationError):
+            card.full_clean()
+
+    def test_position_defaults_to_null(self):
+        card = Card.objects.create(deck=self.deck, front="F", back="B")
+        self.assertIsNone(card.position)
+
+    def test_position_can_be_set(self):
+        card = Card.objects.create(deck=self.deck, front="F", back="B", position=3)
+        card.refresh_from_db()
+        self.assertEqual(card.position, 3)
+
     def test_status_defaults_to_new(self):
         card = Card.objects.create(deck=self.deck, front="F", back="B")
         self.assertEqual(card.status, Card.CardStatus.NEW)
@@ -582,6 +605,45 @@ class CardViewCreateTests(APITestCase):
             "card_type": "invalid",
         })
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_flag_defaults_to_zero_in_response(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(card_list_url(self.alice_deck.id), {
+            "front": "Q", "back": "A",
+        })
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["flag"], 0)
+
+    def test_flag_can_be_set_on_create(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(card_list_url(self.alice_deck.id), {
+            "front": "Q", "back": "A", "flag": 3,
+        })
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["flag"], 3)
+
+    def test_flag_above_max_rejected_by_api(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(card_list_url(self.alice_deck.id), {
+            "front": "Q", "back": "A", "flag": 8,
+        })
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_position_defaults_to_null_in_response(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(card_list_url(self.alice_deck.id), {
+            "front": "Q", "back": "A",
+        })
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertIsNone(resp.data["position"])
+
+    def test_position_can_be_set_on_create(self):
+        self.client.force_authenticate(self.alice)
+        resp = self.client.post(card_list_url(self.alice_deck.id), {
+            "front": "Q", "back": "A", "position": 5,
+        })
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["position"], 5)
 
     def test_sr_fields_default_values_in_response(self):
         self.client.force_authenticate(self.alice)

@@ -2,7 +2,7 @@
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxLengthValidator
+from django.core.validators import MaxLengthValidator, MaxValueValidator
 from django.db import models
 import uuid
 
@@ -182,6 +182,14 @@ class Card(models.Model):
     front = models.TextField(validators=[MaxLengthValidator(10_000)])
     back = models.TextField(blank=True, validators=[MaxLengthValidator(10_000)])
     extra_notes = models.JSONField(default=list, blank=True, validators=[validate_extra_notes])
+
+    # Organization fields — preserved on import from Anki.
+    flag = models.PositiveSmallIntegerField(
+        default=0,
+        validators=[MaxValueValidator(7)],
+        # 0=none, 1=red, 2=orange, 3=green, 4=blue, 5=pink, 6=turquoise, 7=purple
+    )
+    position = models.PositiveIntegerField(null=True, blank=True)  # manual ordering within a deck
 
     # Spaced repetition fields — populated by the SR algorithm and preserved on import.
     status = models.CharField(

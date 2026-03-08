@@ -176,6 +176,13 @@ export default function DeckDetailPage() {
                     <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground capitalize">
                       {card.status}
                     </span>
+                    {card.flag > 0 && (
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: ["", "red", "orange", "green", "blue", "pink", "cyan", "purple"][card.flag] }}
+                        title={["", "Red", "Orange", "Green", "Blue", "Pink", "Turquoise", "Purple"][card.flag]}
+                      />
+                    )}
                   </div>
                   <div>
                     <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">

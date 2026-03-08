@@ -24,6 +24,8 @@ export interface Card {
   deck: string;
   card_type: CardType;
   status: CardStatus;
+  flag: number;
+  position: number | null;
   front: string;
   back: string;
   tags: string[];

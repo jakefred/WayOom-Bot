@@ -33,6 +33,8 @@ class CardSerializer(serializers.ModelSerializer):
             "deck",
             "card_type",
             "status",
+            "flag",
+            "position",
             "tags",
             "front",
             "back",
