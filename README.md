@@ -74,6 +74,8 @@ WayOom Bot/
    python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
    ```
 
+   **PostgreSQL:** To use PostgreSQL instead of SQLite, set `DB_NAME`, `DB_USER`, and `DB_PASSWORD` (and optionally `DB_HOST`, `DB_PORT`) in `.env`. Create the database first, e.g. `createdb wayoom` (or via psql). If `DB_NAME` is not set, the app uses SQLite.
+
    Django does not load `.env` by default — either set the variables in your shell or load them with `python-dotenv`.
 
 5. **Run migrations and start the server**
@@ -161,14 +163,26 @@ Client Request
 - [x] JWT authentication
 - [x] OpenAPI / Swagger documentation
 - [x] Frontend scaffold — auth, deck list/create, card list/create ([#6](https://github.com/jakefred/WayOom-Bot/issues/6))
-- [x] Model and view test suite — 81 tests ([#9](https://github.com/jakefred/WayOom-Bot/issues/9))
+- [x] Model and view test suite — 82 tests ([#9](https://github.com/jakefred/WayOom-Bot/issues/9))
 - [x] CI pipeline — GitHub Actions runs tests and lint on every push/PR ([#14](https://github.com/jakefred/WayOom-Bot/issues/14))
+- [x] Remove the name field from cards ([#12](https://github.com/jakefred/WayOom-Bot/issues/12))
+
+### In Progress — Anki Parity
+
+Expanding the Card model so importing from Anki is lossless and users don't feel like they downgraded. See `docs/adding-model-fields.md` for the field-change checklist.
+
+- [ ] **Card type** — `card_type` field: `basic`, `basic_reversed`, `cloze`. Determines how the card is studied and maps to Anki's note types.
+- [ ] **Extra field** — `extra` TextField for additional context shown after answering. Maps to Anki's "Extra" field (field[2] in multi-field notes).
+- [ ] **Spaced repetition fields** — `status` (new/learning/review/suspended/buried), `due_date`, `interval`, `ease_factor`, `review_count`, `lapse_count`. Stores scheduling state so imported Anki data is preserved and WayOom can run its own SR algorithm later.
+- [ ] **Organization fields** — `flag` (0–7 color flags, matches Anki) and `position` (manual ordering within a deck).
+- [ ] **HTML rendering** — Anki fields contain HTML. Render `front`, `back`, and `extra` as sanitized HTML in the frontend (DOMPurify) instead of plain text.
+- [ ] **Anki `.apkg` import** — `POST /api/import/apkg/` endpoint + frontend upload UI. Converts Anki decks and notes into WayOom Decks and Cards. Supports all three `.apkg` format versions including zstd-compressed `.anki21b`.
+- [ ] **Media attachments** — `CardMedia` model linking files (images, audio) to cards. Required for full `.apkg` import fidelity.
 
 ### Short Term — Core Experience
 
 - [ ] Flashcard study mode — flip cards front/back
 - [ ] Edit and delete decks and cards from the UI
-- [ ] Remove the name field from cards ([#12](https://github.com/jakefred/WayOom-Bot/issues/12))
 - [ ] Frontend design review ([#7](https://github.com/jakefred/WayOom-Bot/issues/7))
 - [ ] Add a sidebar to the UI ([#17](https://github.com/jakefred/WayOom-Bot/issues/17))
 - [ ] Add a theme ([#18](https://github.com/jakefred/WayOom-Bot/issues/18))
@@ -183,7 +197,7 @@ Client Request
 - [ ] Move refresh token from `localStorage` to an `httpOnly` cookie
 - [ ] Add password strength indicators to the UI ([#16](https://github.com/jakefred/WayOom-Bot/issues/16))
 - [ ] Security review ([#10](https://github.com/jakefred/WayOom-Bot/issues/10))
-- [ ] Switch from SQLite to PostgreSQL ([#5](https://github.com/jakefred/WayOom-Bot/issues/5))
+- [x] Switch from SQLite to PostgreSQL ([#5](https://github.com/jakefred/WayOom-Bot/issues/5))
 - [ ] CD pipeline — automated deployment ([#19](https://github.com/jakefred/WayOom-Bot/issues/19))
 - [ ] Account recovery and deletion ([#13](https://github.com/jakefred/WayOom-Bot/issues/13))
 
