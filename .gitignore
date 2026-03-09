@@ -38,3 +38,6 @@ Thumbs.db
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Anki reference files — large binaries, not for version control
+*.apkg

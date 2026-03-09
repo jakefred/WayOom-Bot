@@ -22,11 +22,11 @@ WayOom Bot/
 ├── backend/
 │   ├── config/          # Django project settings, URLs, WSGI/ASGI
 │   ├── users/           # Custom user model (email-based login)
-│   ├── wayoom_bot/      # Core app — models, views, serializers, admin
+│   ├── wayoom_bot/      # Core app — models, views, serializers, importers
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/            # Vite + React + TypeScript + shadcn/ui
-└── README.md
+└── docs/
 ```
 
 ---
@@ -37,48 +37,32 @@ WayOom Bot/
 
 **Prerequisites:** Python 3.12+
 
-1. **Clone the repository**
+1. **Clone and set up**
 
    ```bash
    git clone https://github.com/jakefred/WayOom-Bot.git
    cd "WayOom Bot"
-   ```
-
-2. **Create and activate a virtual environment**
-
-   ```bash
    python -m venv backend/.venv
-
-   # Windows
-   backend\.venv\Scripts\activate
-
-   # macOS / Linux
-   source backend/.venv/bin/activate
-   ```
-
-3. **Install dependencies**
-
-   ```bash
+   # Windows: backend\.venv\Scripts\activate
+   # macOS/Linux: source backend/.venv/bin/activate
    pip install -r backend/requirements.txt
    ```
 
-4. **Configure environment variables**
+2. **Configure environment**
 
    ```bash
    cp backend/.env.example backend/.env
    ```
 
-   Open `backend/.env` and fill in the values. To generate a `SECRET_KEY`:
+   Edit `backend/.env` with your values. Generate a `SECRET_KEY`:
 
    ```bash
    python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
    ```
 
-   **PostgreSQL:** To use PostgreSQL instead of SQLite, set `DB_NAME`, `DB_USER`, and `DB_PASSWORD` (and optionally `DB_HOST`, `DB_PORT`) in `.env`. Create the database first: `createdb wayoom` (or via psql/pgAdmin). If `DB_NAME` is not set, the app falls back to SQLite.
+   **PostgreSQL:** Set `DB_NAME`, `DB_USER`, `DB_PASSWORD` in `.env`. If `DB_NAME` is unset, the app falls back to SQLite. `.env` is loaded automatically via `python-dotenv`.
 
-   `.env` is loaded automatically by `settings.py` via `python-dotenv` — no need to source it manually.
-
-5. **Run migrations and start the server**
+3. **Run**
 
    ```bash
    cd backend
@@ -86,15 +70,7 @@ WayOom Bot/
    python manage.py runserver
    ```
 
-   The API is at `http://127.0.0.1:8000/` and the admin at `http://127.0.0.1:8000/admin/`.
-
-6. **Create a superuser** (optional, for admin access)
-
-   ```bash
-   python manage.py createsuperuser
-   ```
-
-   The prompt asks for **email** and password — no username, by design.
+   API: `http://127.0.0.1:8000/` | Admin: `http://127.0.0.1:8000/admin/`
 
 ### Frontend
 
@@ -106,9 +82,7 @@ npm install
 npm run dev
 ```
 
-The app runs at `http://localhost:5173`. Requests to `/api` are proxied to the Django backend, so both servers need to be running.
-
-See [`frontend/README.md`](frontend/README.md) for frontend-specific details.
+Runs at `http://localhost:5173`. Requests to `/api` are proxied to the Django backend.
 
 ### API Documentation
 
@@ -116,40 +90,25 @@ Available when `DEBUG=True`:
 
 | URL | Description |
 |-----|-------------|
-| `/api/schema/` | Raw OpenAPI 3.0 schema |
 | `/api/schema/swagger-ui/` | Interactive Swagger UI |
 | `/api/schema/redoc/` | ReDoc documentation |
+| `/api/schema/` | Raw OpenAPI 3.0 schema |
+
+See [`backend/README.md`](backend/README.md) for full endpoint reference.
 
 ---
 
 ## Architecture
 
 ```
-Client Request
-      │
-      ▼
-   Views          Handle HTTP, enforce authentication, call queryset methods
-      │
-      ▼
- Serializers      Validate input, convert between JSON and Python objects
-      │
-      ▼
- QuerySets        Ownership-scoped database queries (visible_to / owned_by)
-      │
-      ▼
-   Models         Database schema and data validation
-      │
-      ▼
-  Database        SQLite in development, PostgreSQL in production
+Client Request → Views → Serializers → QuerySets → Models → Database
 ```
 
-### Key Design Decisions
-
-- **Email-based authentication.** The custom user model (`users.User`) uses email as the login identifier. No username field.
-- **UUID primary keys** on all models to prevent ID enumeration.
-- **Ownership-scoped queries.** `DeckQuerySet` centralizes access control. Views use `visible_to(user)` for reads and `owned_by(user)` for writes — never raw, unscoped queries.
-- **Cards inherit deck privacy.** A card is only as public as its parent deck.
-- **Secrets stay out of code.** All sensitive values are read from environment variables.
+- **Email-based auth** — custom user model, no username field.
+- **UUID primary keys** on all models to prevent enumeration.
+- **Ownership-scoped queries** — `visible_to(user)` for reads, `owned_by(user)` for writes. Never raw, unscoped queries.
+- **Cards inherit deck privacy** — a card is only as visible as its parent deck.
+- **Secrets stay out of code** — all sensitive values from environment variables.
 
 ---
 
@@ -159,55 +118,43 @@ Client Request
 
 - [x] Custom user model with email login
 - [x] Deck and card models with UUID keys
-- [x] REST API with ownership enforcement
-- [x] JWT authentication
+- [x] REST API with ownership enforcement and JWT auth
 - [x] OpenAPI / Swagger documentation
-- [x] Frontend scaffold — auth, deck list/create, card list/create ([#6](https://github.com/jakefred/WayOom-Bot/issues/6))
-- [x] Model and view test suite — 127 tests ([#9](https://github.com/jakefred/WayOom-Bot/issues/9))
-- [x] CI pipeline — GitHub Actions runs tests and lint on every push/PR ([#14](https://github.com/jakefred/WayOom-Bot/issues/14))
-- [x] Remove the name field from cards ([#12](https://github.com/jakefred/WayOom-Bot/issues/12))
+- [x] Frontend — auth, deck list/create, card list/create ([#6](https://github.com/jakefred/WayOom-Bot/issues/6))
+- [x] Test suite — 153 tests ([#9](https://github.com/jakefred/WayOom-Bot/issues/9))
+- [x] CI pipeline — GitHub Actions ([#14](https://github.com/jakefred/WayOom-Bot/issues/14))
+- [x] PostgreSQL support ([#5](https://github.com/jakefred/WayOom-Bot/issues/5))
 
-### In Progress — Anki Parity
+### Done — Anki Parity
 
-Expanding the Card model so importing from Anki is lossless and users don't feel like they downgraded. See `docs/adding-model-fields.md` for the field-change checklist.
+Card model expanded for lossless Anki import. See `docs/adding-model-fields.md` for the field-change checklist.
 
-- [x] **Card type** — `card_type` field: `basic`, `basic_reversed`, `cloze`. Determines how the card is studied and maps to Anki's note types.
-- [x] **Extra field** — `extra_notes` JSON list mapping to Anki's `flds[2+]` — ordered additional fields for context, hints, and supplementary answers.
-- [x] **Spaced repetition fields** — `status` (new/learning/review/suspended/buried), `due_date`, `interval`, `ease_factor`, `review_count`, `lapse_count`. Stores scheduling state so imported Anki data is preserved and WayOom can run its own SR algorithm later.
-- [x] **Organization fields** — `flag` (0–7 color flags, matches Anki) and `position` (manual ordering within a deck).
-- [x] **HTML rendering** — Anki fields contain HTML. Render `front`, `back`, and `extra` as sanitized HTML in the frontend (DOMPurify) instead of plain text.
-- [ ] **Anki `.apkg` import** — `POST /api/import/apkg/` endpoint + frontend upload UI. Converts Anki decks and notes into WayOom Decks and Cards. Supports all three `.apkg` format versions including zstd-compressed `.anki21b`.
-- [ ] **Media attachments** — `CardMedia` model linking files (images, audio) to cards. Required for full `.apkg` import fidelity.
+- [x] **Card types** — `basic`, `basic_reversed`, `cloze`
+- [x] **Extra notes** — `extra_notes` JSON list for Anki's additional fields
+- [x] **Spaced repetition** — `status`, `due_date`, `interval`, `ease_factor`, `review_count`, `lapse_count`
+- [x] **Organization** — `flag` (0-7 color flags) and `position` (manual ordering)
+- [x] **HTML rendering** — sanitized HTML via DOMPurify for `front`, `back`, and `extra_notes`
+- [x] **`.apkg` import** — `POST /api/import/apkg/` + frontend upload UI. Supports `.anki2`, `.anki21`, and `.anki21b` (zstd-compressed) formats. Deterministic UUID v5 dedup, partial failure handling, 50 MB limit. 26 dedicated tests.
 
-### Housekeeping
+### Up Next
 
-- [x] Commit the PostgreSQL switch (`settings.py` + `requirements.txt` + `python-dotenv`)
-- [x] Quote `DB_PASSWORD` in `backend/.env` to handle special characters
-- [x] Run `pip install -r backend/requirements.txt` to install `psycopg2-binary` and `python-dotenv` in the venv
-- [x] Add `*.code-workspace` to `.gitignore`
-- [x] Move `tmp_issue_body.md` to `docs/apkg-import-spec.md` or add to `.gitignore`
-- [x] Commit the `tags` fix in `CardAdmin.search_fields` (accidentally dropped during extra_notes step)
-
-### Short Term — Core Experience
-
+- [ ] **Media attachments** — `CardMedia` model for images/audio. Required for full `.apkg` fidelity.
 - [ ] Flashcard study mode — flip cards front/back
 - [ ] Edit and delete decks and cards from the UI
 - [ ] Frontend design review ([#7](https://github.com/jakefred/WayOom-Bot/issues/7))
-- [ ] Add a sidebar to the UI ([#17](https://github.com/jakefred/WayOom-Bot/issues/17))
-- [ ] Add a theme ([#18](https://github.com/jakefred/WayOom-Bot/issues/18))
+- [ ] Sidebar navigation ([#17](https://github.com/jakefred/WayOom-Bot/issues/17))
+- [ ] Theme support ([#18](https://github.com/jakefred/WayOom-Bot/issues/18))
 - [ ] WayOom icon ([#11](https://github.com/jakefred/WayOom-Bot/issues/11))
 - [ ] Fix: anonymous users cannot read cards in public decks ([#1](https://github.com/jakefred/WayOom-Bot/issues/1))
-- [ ] Tag validation comment — document intentional duplication ([#2](https://github.com/jakefred/WayOom-Bot/issues/2))
 - [ ] Documentation pass ([#8](https://github.com/jakefred/WayOom-Bot/issues/8))
 
-### Before Production — Security & Infrastructure
+### Before Production
 
 - [ ] Rate limiting on auth endpoints ([#3](https://github.com/jakefred/WayOom-Bot/issues/3))
-- [ ] Move refresh token from `localStorage` to an `httpOnly` cookie
-- [ ] Add password strength indicators to the UI ([#16](https://github.com/jakefred/WayOom-Bot/issues/16))
+- [ ] Move refresh token to `httpOnly` cookie
+- [ ] Password strength indicators ([#16](https://github.com/jakefred/WayOom-Bot/issues/16))
 - [ ] Security review ([#10](https://github.com/jakefred/WayOom-Bot/issues/10))
-- [x] Switch from SQLite to PostgreSQL ([#5](https://github.com/jakefred/WayOom-Bot/issues/5))
-- [ ] CD pipeline — automated deployment ([#19](https://github.com/jakefred/WayOom-Bot/issues/19))
+- [ ] CD pipeline ([#19](https://github.com/jakefred/WayOom-Bot/issues/19))
 - [ ] Account recovery and deletion ([#13](https://github.com/jakefred/WayOom-Bot/issues/13))
 
 ### Long Term

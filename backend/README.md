@@ -153,6 +153,51 @@ Authorization: Bearer <access_token>
 | `created_at` | datetime | No | Auto-set |
 | `updated_at` | datetime | No | Auto-set |
 
+### Import
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| POST | `/api/import/apkg/` | Required | Import an Anki `.apkg` file |
+
+#### Request
+
+`multipart/form-data` with a single field:
+
+| Field | Type | Description |
+|---|---|---|
+| `file` | file | `.apkg` file, max 50 MB |
+
+#### Response `200`
+
+```json
+{
+  "decks_created": 3,
+  "cards_created": 142,
+  "cards_skipped": 0,
+  "errors": []
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `decks_created` | integer | Number of new Deck objects created |
+| `cards_created` | integer | Number of new Card objects created |
+| `cards_skipped` | integer | Cards that already existed (duplicate import) |
+| `errors` | string[] | Per-card errors; import continues despite these |
+
+**Notes:**
+- Each Anki deck becomes one WayOom Deck. Nested names (`Japanese::Vocabulary`) are kept as-is.
+- Re-importing the same file is safe — duplicate cards are silently skipped via deterministic UUID v5 deduplication.
+- Supports all three `.apkg` format variants: `.anki2` (schema v11), `.anki21` (schema v11), `.anki21b` (schema v18, zstd-compressed).
+- Media references (`<img>`, `[sound:]`) in card fields are preserved as-is for future media support.
+
+#### Error Responses
+
+| Status | Cause |
+|---|---|
+| 400 | File is not `.apkg`, exceeds 50 MB, or is corrupt |
+| 401 | Not authenticated |
+
 ### Cards
 
 Cards are nested under their parent deck.
@@ -267,11 +312,14 @@ backend/
 │   └── admin.py
 ├── wayoom_bot/         # Core flashcard functionality
 │   ├── models.py       # Deck and Card models
-│   ├── views.py        # DeckViewSet, CardViewSet
-│   ├── serializers.py  # DeckSerializer, CardSerializer
-│   ├── urls.py         # Deck and card routes
+│   ├── views.py        # DeckViewSet, CardViewSet, ApkgImportView
+│   ├── serializers.py  # DeckSerializer, CardSerializer, ApkgImportSerializer
+│   ├── urls.py         # Deck, card, and import routes
 │   ├── permissions.py  # IsOwnerOrReadOnly
-│   └── admin.py
+│   ├── admin.py
+│   ├── importers/
+│   │   └── apkg.py     # .apkg parser (schema v11 + v18, zstd support)
+│   └── test_fixtures/  # Committed .apkg fixtures for tests
 ├── manage.py
 ├── requirements.txt
 ├── .env.example

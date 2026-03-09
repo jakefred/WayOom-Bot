@@ -54,6 +54,13 @@ async function extractErrorMessage(res: Response): Promise<string> {
   return `Request failed (${res.status})`;
 }
 
+export interface ApkgImportResult {
+  decks_created: number;
+  cards_created: number;
+  cards_skipped: number;
+  errors: string[];
+}
+
 function authHeaders(access: string): HeadersInit {
   return {
     "Content-Type": "application/json",
@@ -82,6 +89,23 @@ export async function apiCreateDeck(
   });
   if (!res.ok) throw new Error(await extractErrorMessage(res));
   return res.json() as Promise<Deck>;
+}
+
+// --- Import ---
+
+export async function apiImportApkg(
+  access: string,
+  file: File,
+): Promise<ApkgImportResult> {
+  const body = new FormData();
+  body.append("file", file);
+  const res = await fetch("/api/import/apkg/", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${access}` },
+    body,
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res));
+  return res.json() as Promise<ApkgImportResult>;
 }
 
 // --- Card ---

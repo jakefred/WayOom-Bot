@@ -24,6 +24,11 @@ router.register("decks", views.DeckViewSet, basename="deck")
 
 urlpatterns = router.urls + [
     path(
+        "import/apkg/",
+        views.ApkgImportView.as_view(),
+        name="import-apkg",
+    ),
+    path(
         "decks/<uuid:deck_pk>/cards/",
         views.CardViewSet.as_view({"get": "list", "post": "create"}),
         name="card-list",

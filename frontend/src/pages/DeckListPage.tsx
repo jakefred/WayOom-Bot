@@ -1,7 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { apiListDecks, apiCreateDeck, type Deck } from "@/api/decks";
+import { apiListDecks, apiCreateDeck, apiImportApkg, type Deck, type ApkgImportResult } from "@/api/decks";
 import {
   Card,
   CardContent,
@@ -26,6 +26,12 @@ export default function DeckListPage() {
   const [deckDesc, setDeckDesc] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Import state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ApkgImportResult | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!access) return;
@@ -57,6 +63,27 @@ export default function DeckListPage() {
     }
   }
 
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !access) return;
+    // Reset so the same file can be re-selected after dismissing the result.
+    e.target.value = "";
+    setImportError(null);
+    setImportResult(null);
+    setImporting(true);
+    try {
+      const result = await apiImportApkg(access, file);
+      setImportResult(result);
+      // Refresh deck list so newly imported decks appear immediately.
+      const updated = await apiListDecks(access);
+      setDecks(updated);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Import failed.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background p-6">
       {/* Header */}
@@ -72,6 +99,21 @@ export default function DeckListPage() {
               {showForm ? "Cancel" : "New Deck"}
             </Button>
             <Button
+              variant="outline"
+              size="sm"
+              disabled={importing}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {importing ? "Importing…" : "Import .apkg"}
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".apkg"
+              className="hidden"
+              onChange={handleImport}
+            />
+            <Button
               variant="ghost"
               size="sm"
               onClick={() => void logout()}
@@ -80,6 +122,46 @@ export default function DeckListPage() {
             </Button>
           </div>
         </div>
+
+        {/* Import result banner */}
+        {importResult && (
+          <div className="mb-4 flex items-start justify-between rounded-md bg-green-500/10 px-4 py-3 text-sm text-green-700 dark:text-green-400">
+            <div>
+              <p className="font-medium">Import complete</p>
+              <p>
+                {importResult.decks_created} deck{importResult.decks_created !== 1 ? "s" : ""} created,{" "}
+                {importResult.cards_created} card{importResult.cards_created !== 1 ? "s" : ""} imported
+                {importResult.cards_skipped > 0 && `, ${importResult.cards_skipped} skipped (already exist)`}
+              </p>
+              {importResult.errors.length > 0 && (
+                <ul className="mt-1 list-disc pl-4 text-yellow-700 dark:text-yellow-400">
+                  {importResult.errors.map((e, i) => <li key={i}>{e}</li>)}
+                </ul>
+              )}
+            </div>
+            <button
+              className="ml-4 text-lg leading-none opacity-60 hover:opacity-100"
+              onClick={() => setImportResult(null)}
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        {/* Import error banner */}
+        {importError && (
+          <div className="mb-4 flex items-start justify-between rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            <p>{importError}</p>
+            <button
+              className="ml-4 text-lg leading-none opacity-60 hover:opacity-100"
+              onClick={() => setImportError(null)}
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {/* New deck form */}
         {showForm && (

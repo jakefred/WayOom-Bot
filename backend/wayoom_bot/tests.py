@@ -1,6 +1,11 @@
+import io
+import os
+import zipfile
+
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -775,3 +780,312 @@ class CardViewUpdateDeleteTests(APITestCase):
             {"front": "Nope"},
         )
         self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+# ---------------------------------------------------------------------------
+# .apkg import — helpers
+# ---------------------------------------------------------------------------
+
+_FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "test_fixtures")
+_IMPORT_URL = reverse("import-apkg")
+
+
+def _fixture(name: str) -> bytes:
+    """Return the raw bytes of a test fixture .apkg file."""
+    path = os.path.join(_FIXTURES_DIR, name)
+    with open(path, "rb") as f:
+        return f.read()
+
+
+def _post_apkg(client, data: bytes, filename: str = "deck.apkg"):
+    """POST an .apkg file to the import endpoint."""
+    return client.post(
+        _IMPORT_URL,
+        {"file": io.BytesIO(data)},
+        format="multipart",
+        # Tell DRF what filename the upload has (used by the serializer for
+        # extension validation).
+        CONTENT_DISPOSITION=f'attachment; filename="{filename}"',
+    )
+
+
+def _post_apkg_named(client, data: bytes, filename: str):
+    """POST using a named InMemoryUploadedFile so the serializer sees the filename."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    uploaded = SimpleUploadedFile(filename, data, content_type="application/octet-stream")
+    return client.post(_IMPORT_URL, {"file": uploaded}, format="multipart")
+
+
+# ---------------------------------------------------------------------------
+# .apkg import — parser unit tests (no DB, no auth)
+# ---------------------------------------------------------------------------
+
+class ApkgParserTests(TestCase):
+    """Unit-test parse_apkg() in isolation — no Django DB, no HTTP."""
+
+    def setUp(self):
+        from wayoom_bot.importers.apkg import parse_apkg
+        self.parse = parse_apkg
+
+    def test_basic_deck_parsed(self):
+        result = self.parse(_fixture("basic_deck.apkg"))
+        self.assertEqual(len(result.decks), 1)
+        self.assertEqual(result.decks[0]["name"], "Test Deck")
+        self.assertEqual(len(result.cards), 2)
+        self.assertEqual(len(result.errors), 0)
+
+    def test_field_mapping(self):
+        result = self.parse(_fixture("basic_deck.apkg"))
+        # Cards ordered by card id; guid0001 (review) was inserted first.
+        card = next(c for c in result.cards if c["front"] == "What is Python?")
+        self.assertEqual(card["back"], "A programming language")
+        self.assertEqual(card["extra_notes"], ["Extra info"])
+
+    def test_tags_parsed(self):
+        result = self.parse(_fixture("basic_deck.apkg"))
+        card = next(c for c in result.cards if c["front"] == "What is Python?")
+        self.assertIn("python", card["tags"])
+        self.assertIn("programming", card["tags"])
+
+    def test_sr_fields_mapped(self):
+        result = self.parse(_fixture("basic_deck.apkg"))
+        card = next(c for c in result.cards if c["front"] == "What is Python?")
+        self.assertEqual(card["status"], "review")
+        self.assertEqual(card["interval"], 10)
+        self.assertAlmostEqual(card["ease_factor"], 2.5)
+        self.assertEqual(card["review_count"], 5)
+        self.assertEqual(card["lapse_count"], 1)
+
+    def test_due_date_conversion_review_card(self):
+        """Review card (queue=2): due=100 days after collection creation."""
+        from datetime import datetime, timedelta, timezone
+        result = self.parse(_fixture("basic_deck.apkg"))
+        card = next(c for c in result.cards if c["front"] == "What is Python?")
+        crt = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        expected = crt + timedelta(days=100)
+        self.assertEqual(card["due_date"], expected)
+
+    def test_new_card_has_no_due_date(self):
+        result = self.parse(_fixture("basic_deck.apkg"))
+        card = next(c for c in result.cards if c["front"] == "What is Django?")
+        self.assertEqual(card["status"], "new")
+        self.assertIsNone(card["due_date"])
+
+    def test_flag_extracted_from_low_bits(self):
+        result = self.parse(_fixture("basic_deck.apkg"))
+        card = next(c for c in result.cards if c["front"] == "What is Python?")
+        self.assertEqual(card["flag"], 2)  # orange
+
+    def test_unflagged_card(self):
+        result = self.parse(_fixture("basic_deck.apkg"))
+        card = next(c for c in result.cards if c["front"] == "What is Django?")
+        self.assertEqual(card["flag"], 0)
+
+    def test_multi_deck_names_preserved(self):
+        result = self.parse(_fixture("multi_deck.apkg"))
+        names = {d["name"] for d in result.decks}
+        self.assertIn("Languages::Python", names)
+        self.assertIn("Languages::Java", names)
+
+    def test_multi_deck_card_count(self):
+        result = self.parse(_fixture("multi_deck.apkg"))
+        self.assertEqual(len(result.cards), 2)
+        self.assertEqual(len(result.errors), 0)
+
+    def test_basic_card_type_detected(self):
+        result = self.parse(_fixture("card_types.apkg"))
+        card = next(c for c in result.cards if c["front"] == "Basic front")
+        self.assertEqual(card["card_type"], "basic")
+
+    def test_basic_reversed_card_type_detected(self):
+        result = self.parse(_fixture("card_types.apkg"))
+        rev_cards = [c for c in result.cards if c["front"] in ("Rev front", "Rev back")]
+        self.assertEqual(len(rev_cards), 2)
+        for c in rev_cards:
+            self.assertEqual(c["card_type"], "basic_reversed")
+
+    def test_cloze_card_type_detected(self):
+        result = self.parse(_fixture("card_types.apkg"))
+        cloze = next(c for c in result.cards if "capital" in c["front"])
+        self.assertEqual(cloze["card_type"], "cloze")
+
+    def test_deterministic_uuid(self):
+        """Same file parsed twice produces identical card UUIDs."""
+        r1 = self.parse(_fixture("basic_deck.apkg"))
+        r2 = self.parse(_fixture("basic_deck.apkg"))
+        ids1 = {c["id"] for c in r1.cards}
+        ids2 = {c["id"] for c in r2.cards}
+        self.assertEqual(ids1, ids2)
+
+    def test_invalid_zip_raises(self):
+        from wayoom_bot.importers.apkg import parse_apkg
+        with self.assertRaises(ValueError):
+            parse_apkg(b"not a zip file")
+
+    def test_partial_failure_skips_bad_card(self):
+        """A card referencing an unknown model ID is skipped, others succeed."""
+        import json
+        import sqlite3
+        import tempfile
+
+        # Build a minimal .apkg with one valid note and one with a bad model ID.
+        conn = sqlite3.connect(":memory:")
+        conn.executescript("""
+            CREATE TABLE col (id INTEGER PRIMARY KEY, crt INTEGER NOT NULL,
+                mod INTEGER NOT NULL, scm INTEGER NOT NULL, ver INTEGER NOT NULL,
+                dty INTEGER NOT NULL, usn INTEGER NOT NULL, ls INTEGER NOT NULL,
+                conf TEXT NOT NULL, models TEXT NOT NULL, decks TEXT NOT NULL,
+                dconf TEXT NOT NULL, tags TEXT NOT NULL);
+            CREATE TABLE notes (id INTEGER PRIMARY KEY, guid TEXT NOT NULL,
+                mid INTEGER NOT NULL, mod INTEGER NOT NULL, usn INTEGER NOT NULL,
+                tags TEXT NOT NULL, flds TEXT NOT NULL, sfld TEXT NOT NULL,
+                csum INTEGER NOT NULL, flags INTEGER NOT NULL, data TEXT NOT NULL);
+            CREATE TABLE cards (id INTEGER PRIMARY KEY, nid INTEGER NOT NULL,
+                did INTEGER NOT NULL, ord INTEGER NOT NULL, mod INTEGER NOT NULL,
+                usn INTEGER NOT NULL, type INTEGER NOT NULL, queue INTEGER NOT NULL,
+                due INTEGER NOT NULL, ivl INTEGER NOT NULL, factor INTEGER NOT NULL,
+                reps INTEGER NOT NULL, lapses INTEGER NOT NULL, left INTEGER NOT NULL,
+                odue INTEGER NOT NULL, odid INTEGER NOT NULL, flags INTEGER NOT NULL,
+                data TEXT NOT NULL);
+            CREATE TABLE revlog (id INTEGER PRIMARY KEY, cid INTEGER NOT NULL,
+                usn INTEGER NOT NULL, ease INTEGER NOT NULL, ivl INTEGER NOT NULL,
+                lastIvl INTEGER NOT NULL, factor INTEGER NOT NULL, time INTEGER NOT NULL,
+                type INTEGER NOT NULL);
+            CREATE TABLE graves (usn INTEGER NOT NULL, oid INTEGER NOT NULL, type INTEGER NOT NULL);
+        """)
+        mid = 9999001
+        did = 9999002
+        models = {str(mid): {"id": mid, "name": "Basic",
+                              "flds": [{"name": "Front", "ord": 0}, {"name": "Back", "ord": 1}],
+                              "tmpls": [{"name": "Card 1", "ord": 0, "qfmt": "{{Front}}", "afmt": "{{Back}}"}]}}
+        decks = {str(did): {"id": did, "name": "Partial Deck"}}
+        CRT = 1704067200
+        conn.execute(
+            "INSERT INTO col VALUES (1,?,?,?,11,0,0,0,'{}',?,?,'{}','{}')",
+            (CRT, CRT, CRT, json.dumps(models), json.dumps(decks)),
+        )
+        # Valid note
+        conn.execute("INSERT INTO notes VALUES (1,'pguid001',?,?,0,'','Front\x1fBack','Front',0,0,'')", (mid, CRT))
+        conn.execute("INSERT INTO cards VALUES (1,1,?,0,?,0,2,2,10,7,2500,2,0,0,0,0,0,'')", (did, CRT))
+        # Note with a BAD model ID (not in models dict)
+        conn.execute("INSERT INTO notes VALUES (2,'pguid002',99999,?,0,'','Bad\x1fNote','Bad',0,0,'')", (CRT,))
+        conn.execute("INSERT INTO cards VALUES (2,2,?,0,?,0,0,0,1,0,0,0,0,0,0,0,0,'')", (did, CRT))
+        conn.commit()
+
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        try:
+            bk = sqlite3.connect(tmp.name)
+            conn.backup(bk)
+            bk.close()
+            with open(tmp.name, "rb") as f:
+                sqlite_bytes = f.read()
+        finally:
+            import os as _os
+            _os.unlink(tmp.name)
+        conn.close()
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("collection.anki21", sqlite_bytes)
+            zf.writestr("media", "{}")
+        apkg = buf.getvalue()
+
+        from wayoom_bot.importers.apkg import parse_apkg
+        result = parse_apkg(apkg)
+        self.assertEqual(len(result.cards), 1)
+        self.assertEqual(len(result.errors), 1)
+        self.assertIn("pguid002", result.errors[0])
+
+
+# ---------------------------------------------------------------------------
+# .apkg import — API endpoint tests
+# ---------------------------------------------------------------------------
+
+class ApkgImportViewTests(APITestCase):
+    """Integration tests for POST /api/import/apkg/."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="importer", email="importer@example.com", password="pass"
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_successful_import(self):
+        resp = _post_apkg_named(self.client, _fixture("basic_deck.apkg"), "basic_deck.apkg")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        data = resp.json()
+        self.assertEqual(data["decks_created"], 1)
+        self.assertEqual(data["cards_created"], 2)
+        self.assertEqual(data["cards_skipped"], 0)
+        self.assertEqual(data["errors"], [])
+
+    def test_decks_and_cards_saved_to_db(self):
+        _post_apkg_named(self.client, _fixture("basic_deck.apkg"), "basic_deck.apkg")
+        self.assertEqual(Deck.objects.filter(user=self.user).count(), 1)
+        deck = Deck.objects.get(user=self.user)
+        self.assertEqual(deck.name, "Test Deck")
+        self.assertEqual(Card.objects.filter(deck=deck).count(), 2)
+
+    def test_duplicate_import_skips_cards(self):
+        _post_apkg_named(self.client, _fixture("basic_deck.apkg"), "basic_deck.apkg")
+        resp = _post_apkg_named(self.client, _fixture("basic_deck.apkg"), "basic_deck.apkg")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        data = resp.json()
+        self.assertEqual(data["decks_created"], 0)
+        self.assertEqual(data["cards_created"], 0)
+        self.assertEqual(data["cards_skipped"], 2)
+        # Total cards in DB should still be 2, not 4
+        self.assertEqual(Card.objects.filter(deck__user=self.user).count(), 2)
+
+    def test_multi_deck_import(self):
+        resp = _post_apkg_named(self.client, _fixture("multi_deck.apkg"), "multi_deck.apkg")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        data = resp.json()
+        self.assertEqual(data["decks_created"], 2)
+        self.assertEqual(data["cards_created"], 2)
+
+    def test_deck_names_preserved(self):
+        _post_apkg_named(self.client, _fixture("multi_deck.apkg"), "multi_deck.apkg")
+        names = set(Deck.objects.filter(user=self.user).values_list("name", flat=True))
+        self.assertIn("Languages::Python", names)
+        self.assertIn("Languages::Java", names)
+
+    def test_unauthenticated_returns_401(self):
+        self.client.force_authenticate(user=None)
+        resp = _post_apkg_named(self.client, _fixture("basic_deck.apkg"), "basic_deck.apkg")
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_wrong_extension_returns_400(self):
+        resp = _post_apkg_named(self.client, _fixture("basic_deck.apkg"), "deck.txt")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_invalid_zip_returns_400(self):
+        resp = _post_apkg_named(self.client, b"not a zip file", "bad.apkg")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_file_too_large_returns_400(self):
+        # Build a fake .apkg that reports a large size via a mock upload.
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        large = SimpleUploadedFile("big.apkg", b"x", content_type="application/octet-stream")
+        # Patch the size attribute to exceed 50 MB
+        large.size = 51 * 1024 * 1024
+        resp = self.client.post(_IMPORT_URL, {"file": large}, format="multipart")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_two_users_import_same_file_get_separate_decks(self):
+        user2 = User.objects.create_user(
+            username="importer2", email="importer2@example.com", password="pass"
+        )
+        _post_apkg_named(self.client, _fixture("basic_deck.apkg"), "basic_deck.apkg")
+        self.client.force_authenticate(user=user2)
+        resp = _post_apkg_named(self.client, _fixture("basic_deck.apkg"), "basic_deck.apkg")
+        self.assertEqual(resp.json()["decks_created"], 1)
+        self.assertEqual(resp.json()["cards_created"], 2)
+        # Each user should have their own deck
+        self.assertEqual(Deck.objects.filter(user=self.user).count(), 1)
+        self.assertEqual(Deck.objects.filter(user=user2).count(), 1)
+        self.assertNotEqual(
+            Deck.objects.get(user=self.user).id,
+            Deck.objects.get(user=user2).id,
+        )

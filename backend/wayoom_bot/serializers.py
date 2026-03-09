@@ -88,6 +88,22 @@ class CardSerializer(serializers.ModelSerializer):
         return value
 
 
+class ApkgImportSerializer(serializers.Serializer):
+    """Validates the file upload for the .apkg import endpoint."""
+
+    file = serializers.FileField()
+
+    def validate_file(self, value):
+        if not value.name.lower().endswith(".apkg"):
+            raise serializers.ValidationError("File must have a .apkg extension.")
+        max_bytes = 50 * 1024 * 1024  # 50 MB
+        if value.size > max_bytes:
+            raise serializers.ValidationError(
+                f"File is too large ({value.size / 1024 / 1024:.1f} MB). Maximum is 50 MB."
+            )
+        return value
+
+
 class DeckSerializer(serializers.ModelSerializer):
     """
     Serialize Deck for API read/write.
