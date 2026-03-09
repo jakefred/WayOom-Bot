@@ -175,7 +175,7 @@ Expanding the Card model so importing from Anki is lossless and users don't feel
 - [x] **Extra field** — `extra_notes` JSON list mapping to Anki's `flds[2+]` — ordered additional fields for context, hints, and supplementary answers.
 - [x] **Spaced repetition fields** — `status` (new/learning/review/suspended/buried), `due_date`, `interval`, `ease_factor`, `review_count`, `lapse_count`. Stores scheduling state so imported Anki data is preserved and WayOom can run its own SR algorithm later.
 - [x] **Organization fields** — `flag` (0–7 color flags, matches Anki) and `position` (manual ordering within a deck).
-- [ ] **HTML rendering** — Anki fields contain HTML. Render `front`, `back`, and `extra` as sanitized HTML in the frontend (DOMPurify) instead of plain text.
+- [x] **HTML rendering** — Anki fields contain HTML. Render `front`, `back`, and `extra` as sanitized HTML in the frontend (DOMPurify) instead of plain text.
 - [ ] **Anki `.apkg` import** — `POST /api/import/apkg/` endpoint + frontend upload UI. Converts Anki decks and notes into WayOom Decks and Cards. Supports all three `.apkg` format versions including zstd-compressed `.anki21b`.
 - [ ] **Media attachments** — `CardMedia` model linking files (images, audio) to cards. Required for full `.apkg` import fidelity.
 

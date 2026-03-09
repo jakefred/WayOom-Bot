@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import DOMPurify from "dompurify";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { apiListCards, apiCreateCard, type Card, type CardType } from "@/api/decks";
@@ -188,20 +189,18 @@ export default function DeckDetailPage() {
                     <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       Front
                     </p>
-                    <p className="text-sm">{card.front}</p>
+                    <div className="text-sm" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(card.front) }} />
                   </div>
                   <div>
                     <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       Back
                     </p>
-                    <p className="text-sm">{card.back}</p>
+                    <div className="text-sm" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(card.back) }} />
                   </div>
                   {card.extra_notes.length > 0 && (
                     <div className="space-y-2 border-t pt-3">
                       {card.extra_notes.map((note, i) => (
-                        <p key={i} className="text-sm text-muted-foreground">
-                          {note}
-                        </p>
+                        <div key={i} className="text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(note) }} />
                       ))}
                     </div>
                   )}
