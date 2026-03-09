@@ -30,6 +30,7 @@ local_settings.py
 # IDE / OS
 .idea/
 .vscode/
+*.code-workspace
 *.DS_Store
 Thumbs.db
 

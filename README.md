@@ -74,9 +74,9 @@ WayOom Bot/
    python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
    ```
 
-   **PostgreSQL:** To use PostgreSQL instead of SQLite, set `DB_NAME`, `DB_USER`, and `DB_PASSWORD` (and optionally `DB_HOST`, `DB_PORT`) in `.env`. Create the database first, e.g. `createdb wayoom` (or via psql). If `DB_NAME` is not set, the app uses SQLite.
+   **PostgreSQL:** To use PostgreSQL instead of SQLite, set `DB_NAME`, `DB_USER`, and `DB_PASSWORD` (and optionally `DB_HOST`, `DB_PORT`) in `.env`. Create the database first: `createdb wayoom` (or via psql/pgAdmin). If `DB_NAME` is not set, the app falls back to SQLite.
 
-   Django does not load `.env` by default — either set the variables in your shell or load them with `python-dotenv`.
+   `.env` is loaded automatically by `settings.py` via `python-dotenv` — no need to source it manually.
 
 5. **Run migrations and start the server**
 
@@ -179,14 +179,14 @@ Expanding the Card model so importing from Anki is lossless and users don't feel
 - [ ] **Anki `.apkg` import** — `POST /api/import/apkg/` endpoint + frontend upload UI. Converts Anki decks and notes into WayOom Decks and Cards. Supports all three `.apkg` format versions including zstd-compressed `.anki21b`.
 - [ ] **Media attachments** — `CardMedia` model linking files (images, audio) to cards. Required for full `.apkg` import fidelity.
 
-### Housekeeping — First Thing Tomorrow
+### Housekeeping
 
-- [ ] Commit the PostgreSQL switch (`settings.py` + `requirements.txt`) — changes are done but unstaged
-- [ ] Quote `SECRET_KEY` in `backend/.env` to fix `source .env` in bash
-- [ ] Run `pip install -r backend/requirements.txt` to install `psycopg2-binary` in the venv
-- [ ] Add `*.code-workspace` to `.gitignore`
-- [ ] Move `tmp_issue_body.md` to `docs/apkg-import-spec.md` or add to `.gitignore`
-- [ ] Commit the `tags` fix in `CardAdmin.search_fields` (accidentally dropped during extra_notes step)
+- [x] Commit the PostgreSQL switch (`settings.py` + `requirements.txt` + `python-dotenv`)
+- [x] Quote `DB_PASSWORD` in `backend/.env` to handle special characters
+- [x] Run `pip install -r backend/requirements.txt` to install `psycopg2-binary` and `python-dotenv` in the venv
+- [x] Add `*.code-workspace` to `.gitignore`
+- [x] Move `tmp_issue_body.md` to `docs/apkg-import-spec.md` or add to `.gitignore`
+- [x] Commit the `tags` fix in `CardAdmin.search_fields` (accidentally dropped during extra_notes step)
 
 ### Short Term — Core Experience
 
