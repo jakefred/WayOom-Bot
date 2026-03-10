@@ -5,9 +5,45 @@ Validate request input and shape responses. Read-only fields (id, user, timestam
 are never accepted from clients; views set user from request.user.
 """
 
+import re
+
 from rest_framework import serializers
 
 from .models import Card, Deck
+
+
+# ---------------------------------------------------------------------------
+# Media URL rewriting helpers
+# ---------------------------------------------------------------------------
+
+# Matches <img> tags whose src is a bare filename (not already an absolute URL
+# or an /api/ path).  We rewrite these to point to the serving endpoint.
+_IMG_SRC_RE = re.compile(
+    r'(<img\b[^>]*?\s)src="(?!https?://|/)([^"]+)"',
+    re.IGNORECASE,
+)
+
+# Matches Anki's [sound:filename] syntax anywhere in a field.
+_SOUND_RE = re.compile(r'\[sound:([^\]]+)\]')
+
+
+def _rewrite_media_urls(text: str, deck_id: str) -> str:
+    """Rewrite bare media references in card HTML to served API URLs.
+
+    Transforms:
+      <img src="cat.jpg">          → <img src="/api/decks/{deck_id}/media/cat.jpg">
+      [sound:pronunciation.mp3]    → <audio controls src="/api/decks/{deck_id}/media/pronunciation.mp3"></audio>
+
+    Absolute URLs and already-rewritten /api/ paths are left untouched, making
+    this transformation idempotent.
+    """
+    base = f"/api/decks/{deck_id}/media/"
+    text = _IMG_SRC_RE.sub(lambda m: f'{m.group(1)}src="{base}{m.group(2)}"', text)
+    text = _SOUND_RE.sub(
+        lambda m: f'<audio controls src="{base}{m.group(1)}"></audio>',
+        text,
+    )
+    return text
 
 
 class CardSerializer(serializers.ModelSerializer):
@@ -86,6 +122,17 @@ class CardSerializer(serializers.ModelSerializer):
                     f"Tag {tag[:50]!r}... exceeds 100 characters."
                 )
         return value
+
+    def to_representation(self, instance):
+        """Rewrite bare media filenames in card fields to served API URLs."""
+        data = super().to_representation(instance)
+        deck_id = str(instance.deck_id)
+        data["front"] = _rewrite_media_urls(data["front"], deck_id)
+        data["back"] = _rewrite_media_urls(data["back"], deck_id)
+        data["extra_notes"] = [
+            _rewrite_media_urls(note, deck_id) for note in data["extra_notes"]
+        ]
+        return data
 
 
 class ApkgImportSerializer(serializers.Serializer):

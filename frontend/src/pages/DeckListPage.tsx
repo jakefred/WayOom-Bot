@@ -132,6 +132,7 @@ export default function DeckListPage() {
                 {importResult.decks_created} deck{importResult.decks_created !== 1 ? "s" : ""} created,{" "}
                 {importResult.cards_created} card{importResult.cards_created !== 1 ? "s" : ""} imported
                 {importResult.cards_skipped > 0 && `, ${importResult.cards_skipped} skipped (already exist)`}
+                {importResult.media_created > 0 && `, ${importResult.media_created} media file${importResult.media_created !== 1 ? "s" : ""} saved`}
               </p>
               {importResult.errors.length > 0 && (
                 <ul className="mt-1 list-disc pl-4 text-yellow-700 dark:text-yellow-400">

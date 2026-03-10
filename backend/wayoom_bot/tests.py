@@ -9,9 +9,12 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+import json
+
 from wayoom_bot.models import (
     Card,
     Deck,
+    DeckMedia,
     MAX_EXTRA_NOTE_LENGTH,
     MAX_EXTRA_NOTES,
     MAX_TAG_LENGTH,
@@ -1089,3 +1092,506 @@ class ApkgImportViewTests(APITestCase):
             Deck.objects.get(user=self.user).id,
             Deck.objects.get(user=user2).id,
         )
+
+
+# ---------------------------------------------------------------------------
+# Media helpers — build a minimal .apkg with embedded media files in memory
+# ---------------------------------------------------------------------------
+
+# Minimal valid JPEG header (matches build_fixtures.py)
+_MINIMAL_JPEG = bytes([
+    0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
+    0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
+])
+
+_MINIMAL_MP3 = bytes([0xFF, 0xFB, 0x90, 0x00]) + bytes(413)
+
+# Collection creation timestamp shared across inline-built fixtures
+_MEDIA_CRT = 1704067200
+
+
+def _build_media_apkg(
+    front: str = 'What animal? <img src="cat.jpg">',
+    back: str = "[sound:pronunciation.mp3]",
+    media_files: dict | None = None,
+) -> bytes:
+    """Build a minimal .apkg in memory containing one deck, one card, and media files.
+
+    media_files: dict of {original_filename: bytes}.  Defaults to cat.jpg + pronunciation.mp3.
+    """
+    import sqlite3 as _sq
+    import tempfile as _tmp
+
+    if media_files is None:
+        media_files = {
+            "cat.jpg": _MINIMAL_JPEG,
+            "pronunciation.mp3": _MINIMAL_MP3,
+        }
+
+    mid = 7000000001
+    did = 7000000002
+    models = {str(mid): {
+        "id": mid, "name": "Basic",
+        "flds": [{"name": "Front", "ord": 0}, {"name": "Back", "ord": 1}],
+        "tmpls": [{"name": "Card 1", "ord": 0, "qfmt": "{{Front}}", "afmt": "{{Back}}"}],
+    }}
+    decks = {str(did): {"id": did, "name": "Media Deck"}}
+
+    conn = _sq.connect(":memory:")
+    conn.executescript("""
+        CREATE TABLE col (id INTEGER PRIMARY KEY, crt INTEGER NOT NULL,
+            mod INTEGER NOT NULL, scm INTEGER NOT NULL, ver INTEGER NOT NULL,
+            dty INTEGER NOT NULL, usn INTEGER NOT NULL, ls INTEGER NOT NULL,
+            conf TEXT NOT NULL, models TEXT NOT NULL, decks TEXT NOT NULL,
+            dconf TEXT NOT NULL, tags TEXT NOT NULL);
+        CREATE TABLE notes (id INTEGER PRIMARY KEY, guid TEXT NOT NULL,
+            mid INTEGER NOT NULL, mod INTEGER NOT NULL, usn INTEGER NOT NULL,
+            tags TEXT NOT NULL, flds TEXT NOT NULL, sfld TEXT NOT NULL,
+            csum INTEGER NOT NULL, flags INTEGER NOT NULL, data TEXT NOT NULL);
+        CREATE TABLE cards (id INTEGER PRIMARY KEY, nid INTEGER NOT NULL,
+            did INTEGER NOT NULL, ord INTEGER NOT NULL, mod INTEGER NOT NULL,
+            usn INTEGER NOT NULL, type INTEGER NOT NULL, queue INTEGER NOT NULL,
+            due INTEGER NOT NULL, ivl INTEGER NOT NULL, factor INTEGER NOT NULL,
+            reps INTEGER NOT NULL, lapses INTEGER NOT NULL, left INTEGER NOT NULL,
+            odue INTEGER NOT NULL, odid INTEGER NOT NULL, flags INTEGER NOT NULL,
+            data TEXT NOT NULL);
+        CREATE TABLE revlog (id INTEGER PRIMARY KEY, cid INTEGER NOT NULL,
+            usn INTEGER NOT NULL, ease INTEGER NOT NULL, ivl INTEGER NOT NULL,
+            lastIvl INTEGER NOT NULL, factor INTEGER NOT NULL, time INTEGER NOT NULL,
+            type INTEGER NOT NULL);
+        CREATE TABLE graves (usn INTEGER NOT NULL, oid INTEGER NOT NULL, type INTEGER NOT NULL);
+    """)
+    conn.execute(
+        "INSERT INTO col VALUES (1,?,?,?,11,0,0,0,'{}',?,?,'{}','{}')",
+        (_MEDIA_CRT, _MEDIA_CRT, _MEDIA_CRT, json.dumps(models), json.dumps(decks)),
+    )
+    conn.execute(
+        "INSERT INTO notes VALUES (1,'mguid001',?,?,0,'',?,?,0,0,'')",
+        (mid, _MEDIA_CRT, f"{front}\x1f{back}", front),
+    )
+    conn.execute(
+        "INSERT INTO cards VALUES (1,1,?,0,?,0,2,2,10,7,2500,2,0,0,0,0,0,'')",
+        (did, _MEDIA_CRT),
+    )
+    conn.commit()
+
+    # Dump SQLite to bytes
+    tf = _tmp.NamedTemporaryFile(suffix=".db", delete=False)
+    tf.close()
+    try:
+        bk = _sq.connect(tf.name)
+        conn.backup(bk)
+        bk.close()
+        with open(tf.name, "rb") as f:
+            sqlite_bytes = f.read()
+    finally:
+        import os as _os
+        _os.unlink(tf.name)
+    conn.close()
+
+    # Build zip with media
+    manifest = {}
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("collection.anki21", sqlite_bytes)
+        for idx, (filename, data) in enumerate(media_files.items()):
+            key = str(idx)
+            manifest[key] = filename
+            zf.writestr(key, data)
+        zf.writestr("media", json.dumps(manifest))
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# DeckMedia model tests
+# ---------------------------------------------------------------------------
+
+class DeckMediaModelTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="mediauser", email="media@example.com", password="pass"
+        )
+        self.deck = Deck.objects.create(name="Test Deck", user=self.user)
+
+    def test_create_deck_media(self):
+        from django.core.files.base import ContentFile
+        dm = DeckMedia(deck=self.deck, original_filename="cat.jpg", file_size=len(_MINIMAL_JPEG))
+        dm.id = __import__("uuid").uuid4()
+        dm.file.save("cat.jpg", ContentFile(_MINIMAL_JPEG), save=False)
+        dm.save()
+        self.assertEqual(DeckMedia.objects.filter(deck=self.deck).count(), 1)
+        self.assertEqual(dm.content_type, "image/jpeg")
+
+    def test_unique_constraint_deck_filename(self):
+        from django.core.files.base import ContentFile
+        from django.db import IntegrityError
+        dm1 = DeckMedia(deck=self.deck, original_filename="cat.jpg", file_size=22)
+        dm1.id = __import__("uuid").uuid4()
+        dm1.file.save("cat.jpg", ContentFile(_MINIMAL_JPEG), save=False)
+        dm1.save()
+        dm2 = DeckMedia(deck=self.deck, original_filename="cat.jpg", file_size=22)
+        dm2.id = __import__("uuid").uuid4()
+        with self.assertRaises(IntegrityError):
+            dm2.save()
+
+    def test_cascade_delete_with_deck(self):
+        from django.core.files.base import ContentFile
+        dm = DeckMedia(deck=self.deck, original_filename="img.jpg", file_size=22)
+        dm.id = __import__("uuid").uuid4()
+        dm.file.save("img.jpg", ContentFile(_MINIMAL_JPEG), save=False)
+        dm.save()
+        self.deck.delete()
+        self.assertEqual(DeckMedia.objects.count(), 0)
+
+    def test_visible_to_owner(self):
+        from django.core.files.base import ContentFile
+        dm = DeckMedia(deck=self.deck, original_filename="v.jpg", file_size=22)
+        dm.id = __import__("uuid").uuid4()
+        dm.file.save("v.jpg", ContentFile(_MINIMAL_JPEG), save=False)
+        dm.save()
+        self.assertIn(dm, DeckMedia.objects.visible_to(self.user))
+
+    def test_visible_to_other_user_only_if_public(self):
+        from django.core.files.base import ContentFile
+        other = User.objects.create_user(username="other2", email="other2@example.com", password="pass")
+        dm = DeckMedia(deck=self.deck, original_filename="p.jpg", file_size=22)
+        dm.id = __import__("uuid").uuid4()
+        dm.file.save("p.jpg", ContentFile(_MINIMAL_JPEG), save=False)
+        dm.save()
+        # Private deck — other user cannot see
+        self.assertNotIn(dm, DeckMedia.objects.visible_to(other))
+        # Make deck public
+        self.deck.is_public = True
+        self.deck.save()
+        self.assertIn(dm, DeckMedia.objects.visible_to(other))
+
+    def test_owned_by(self):
+        from django.core.files.base import ContentFile
+        other = User.objects.create_user(username="other3", email="other3@example.com", password="pass")
+        dm = DeckMedia(deck=self.deck, original_filename="o.jpg", file_size=22)
+        dm.id = __import__("uuid").uuid4()
+        dm.file.save("o.jpg", ContentFile(_MINIMAL_JPEG), save=False)
+        dm.save()
+        self.assertIn(dm, DeckMedia.objects.owned_by(self.user))
+        self.assertNotIn(dm, DeckMedia.objects.owned_by(other))
+
+    def test_content_type_auto_detected_for_mp3(self):
+        from django.core.files.base import ContentFile
+        dm = DeckMedia(deck=self.deck, original_filename="sound.mp3", file_size=len(_MINIMAL_MP3))
+        dm.id = __import__("uuid").uuid4()
+        dm.file.save("sound.mp3", ContentFile(_MINIMAL_MP3), save=False)
+        dm.save()
+        self.assertEqual(dm.content_type, "audio/mpeg")
+
+
+# ---------------------------------------------------------------------------
+# .apkg media parser tests
+# ---------------------------------------------------------------------------
+
+class ApkgMediaParserTests(TestCase):
+    """Unit-test that parse_apkg() extracts media from the zip."""
+
+    def setUp(self):
+        from wayoom_bot.importers.apkg import parse_apkg
+        self.parse = parse_apkg
+
+    def test_media_files_extracted(self):
+        apkg = _build_media_apkg()
+        result = self.parse(apkg)
+        self.assertEqual(len(result.media), 2)
+
+    def test_media_original_filenames(self):
+        apkg = _build_media_apkg()
+        result = self.parse(apkg)
+        names = {m["original_filename"] for m in result.media}
+        self.assertIn("cat.jpg", names)
+        self.assertIn("pronunciation.mp3", names)
+
+    def test_media_file_bytes_preserved(self):
+        apkg = _build_media_apkg()
+        result = self.parse(apkg)
+        jpg = next(m for m in result.media if m["original_filename"] == "cat.jpg")
+        self.assertEqual(jpg["file_bytes"], _MINIMAL_JPEG)
+
+    def test_empty_media_manifest(self):
+        """An .apkg with no media produces an empty media list and no errors."""
+        apkg = _build_media_apkg(media_files={})
+        result = self.parse(apkg)
+        self.assertEqual(len(result.media), 0)
+        self.assertEqual(len(result.errors), 0)
+
+    def test_missing_media_manifest_is_tolerated(self):
+        """An .apkg with no media file at all should parse successfully."""
+        # Build an apkg without a media entry in the zip
+        from wayoom_bot.importers.apkg import parse_apkg
+        import sqlite3 as _sq, tempfile as _tmp
+        mid, did = 7000000099, 7000000098
+        models = {str(mid): {"id": mid, "name": "Basic",
+                              "flds": [{"name": "Front", "ord": 0}, {"name": "Back", "ord": 1}],
+                              "tmpls": [{"name": "Card 1", "ord": 0, "qfmt": "{{Front}}", "afmt": "{{Back}}"}]}}
+        decks = {str(did): {"id": did, "name": "No Media"}}
+        conn = _sq.connect(":memory:")
+        conn.executescript("""
+            CREATE TABLE col (id INTEGER PRIMARY KEY, crt INTEGER NOT NULL,
+                mod INTEGER NOT NULL, scm INTEGER NOT NULL, ver INTEGER NOT NULL,
+                dty INTEGER NOT NULL, usn INTEGER NOT NULL, ls INTEGER NOT NULL,
+                conf TEXT NOT NULL, models TEXT NOT NULL, decks TEXT NOT NULL,
+                dconf TEXT NOT NULL, tags TEXT NOT NULL);
+            CREATE TABLE notes (id INTEGER PRIMARY KEY, guid TEXT NOT NULL,
+                mid INTEGER NOT NULL, mod INTEGER NOT NULL, usn INTEGER NOT NULL,
+                tags TEXT NOT NULL, flds TEXT NOT NULL, sfld TEXT NOT NULL,
+                csum INTEGER NOT NULL, flags INTEGER NOT NULL, data TEXT NOT NULL);
+            CREATE TABLE cards (id INTEGER PRIMARY KEY, nid INTEGER NOT NULL,
+                did INTEGER NOT NULL, ord INTEGER NOT NULL, mod INTEGER NOT NULL,
+                usn INTEGER NOT NULL, type INTEGER NOT NULL, queue INTEGER NOT NULL,
+                due INTEGER NOT NULL, ivl INTEGER NOT NULL, factor INTEGER NOT NULL,
+                reps INTEGER NOT NULL, lapses INTEGER NOT NULL, left INTEGER NOT NULL,
+                odue INTEGER NOT NULL, odid INTEGER NOT NULL, flags INTEGER NOT NULL,
+                data TEXT NOT NULL);
+            CREATE TABLE revlog (id INTEGER PRIMARY KEY, cid INTEGER NOT NULL,
+                usn INTEGER NOT NULL, ease INTEGER NOT NULL, ivl INTEGER NOT NULL,
+                lastIvl INTEGER NOT NULL, factor INTEGER NOT NULL, time INTEGER NOT NULL,
+                type INTEGER NOT NULL);
+            CREATE TABLE graves (usn INTEGER NOT NULL, oid INTEGER NOT NULL, type INTEGER NOT NULL);
+        """)
+        conn.execute(
+            "INSERT INTO col VALUES (1,?,?,?,11,0,0,0,'{}',?,?,'{}','{}')",
+            (_MEDIA_CRT, _MEDIA_CRT, _MEDIA_CRT, json.dumps(models), json.dumps(decks)),
+        )
+        conn.execute("INSERT INTO notes VALUES (1,'nmguid',?,?,0,'','Q\x1fA','Q',0,0,'')", (mid, _MEDIA_CRT))
+        conn.execute("INSERT INTO cards VALUES (1,1,?,0,?,0,0,0,1,0,0,0,0,0,0,0,0,'')", (did, _MEDIA_CRT))
+        conn.commit()
+        tf = _tmp.NamedTemporaryFile(suffix=".db", delete=False)
+        tf.close()
+        try:
+            bk = _sq.connect(tf.name)
+            conn.backup(bk)
+            bk.close()
+            with open(tf.name, "rb") as f:
+                sqlite_bytes = f.read()
+        finally:
+            import os as _os2
+            _os2.unlink(tf.name)
+        conn.close()
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("collection.anki21", sqlite_bytes)
+            # Intentionally omit the "media" file
+        apkg = buf.getvalue()
+        result = parse_apkg(apkg)
+        self.assertEqual(len(result.media), 0)
+        self.assertEqual(len(result.errors), 0)
+
+
+# ---------------------------------------------------------------------------
+# .apkg import — media API tests
+# ---------------------------------------------------------------------------
+
+class ApkgMediaImportTests(APITestCase):
+    """Integration tests for media import via POST /api/import/apkg/."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="mediaimporter", email="mediaimporter@example.com", password="pass"
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_import_creates_deck_media(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        apkg = _build_media_apkg()
+        uploaded = SimpleUploadedFile("media_deck.apkg", apkg, content_type="application/octet-stream")
+        resp = self.client.post(_IMPORT_URL, {"file": uploaded}, format="multipart")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(DeckMedia.objects.filter(deck__user=self.user).count(), 2)
+
+    def test_import_response_includes_media_counts(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        apkg = _build_media_apkg()
+        uploaded = SimpleUploadedFile("media_deck.apkg", apkg, content_type="application/octet-stream")
+        resp = self.client.post(_IMPORT_URL, {"file": uploaded}, format="multipart")
+        data = resp.json()
+        self.assertIn("media_created", data)
+        self.assertIn("media_skipped", data)
+        self.assertEqual(data["media_created"], 2)
+        self.assertEqual(data["media_skipped"], 0)
+
+    def test_reimport_skips_existing_media(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        apkg = _build_media_apkg()
+        for _ in range(2):
+            uploaded = SimpleUploadedFile("media_deck.apkg", apkg, content_type="application/octet-stream")
+            resp = self.client.post(_IMPORT_URL, {"file": uploaded}, format="multipart")
+        data = resp.json()
+        self.assertEqual(data["media_created"], 0)
+        self.assertEqual(data["media_skipped"], 2)
+        # Total media in DB should still be 2, not 4
+        self.assertEqual(DeckMedia.objects.filter(deck__user=self.user).count(), 2)
+
+    def test_media_associated_with_correct_deck(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        apkg = _build_media_apkg()
+        uploaded = SimpleUploadedFile("media_deck.apkg", apkg, content_type="application/octet-stream")
+        self.client.post(_IMPORT_URL, {"file": uploaded}, format="multipart")
+        deck = Deck.objects.get(user=self.user, name="Media Deck")
+        self.assertEqual(DeckMedia.objects.filter(deck=deck).count(), 2)
+
+    def test_apkg_without_media_returns_zero_media_counts(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        uploaded = SimpleUploadedFile("basic_deck.apkg", _fixture("basic_deck.apkg"),
+                                      content_type="application/octet-stream")
+        resp = self.client.post(_IMPORT_URL, {"file": uploaded}, format="multipart")
+        data = resp.json()
+        self.assertEqual(data["media_created"], 0)
+        self.assertEqual(data["media_skipped"], 0)
+
+    def test_media_file_bytes_saved_correctly(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        apkg = _build_media_apkg()
+        uploaded = SimpleUploadedFile("media_deck.apkg", apkg, content_type="application/octet-stream")
+        self.client.post(_IMPORT_URL, {"file": uploaded}, format="multipart")
+        dm = DeckMedia.objects.get(deck__user=self.user, original_filename="cat.jpg")
+        with dm.file.open("rb") as f:
+            saved = f.read()
+        self.assertEqual(saved, _MINIMAL_JPEG)
+
+
+# ---------------------------------------------------------------------------
+# Media serving endpoint tests
+# ---------------------------------------------------------------------------
+
+class DeckMediaServeTests(APITestCase):
+    """Tests for GET /api/decks/<deck_pk>/media/<filename>."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="server", email="server@example.com", password="pass"
+        )
+        self.other = User.objects.create_user(
+            username="other_server", email="other_server@example.com", password="pass"
+        )
+        self.private_deck = Deck.objects.create(name="Private", user=self.user, is_public=False)
+        self.public_deck = Deck.objects.create(name="Public", user=self.user, is_public=True)
+        self._save_media(self.private_deck, "cat.jpg", _MINIMAL_JPEG)
+        self._save_media(self.public_deck, "pub.jpg", _MINIMAL_JPEG)
+
+    def _save_media(self, deck, filename, data):
+        from django.core.files.base import ContentFile
+        dm = DeckMedia(deck=deck, original_filename=filename, file_size=len(data))
+        dm.id = __import__("uuid").uuid4()
+        dm.file.save(filename, ContentFile(data), save=False)
+        dm.save()
+        return dm
+
+    def _media_url(self, deck, filename):
+        return reverse("deck-media", kwargs={"deck_pk": deck.id, "filename": filename})
+
+    def test_owner_can_access_private_deck_media(self):
+        self.client.force_authenticate(self.user)
+        resp = self.client.get(self._media_url(self.private_deck, "cat.jpg"))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_other_user_cannot_access_private_deck_media(self):
+        self.client.force_authenticate(self.other)
+        resp = self.client.get(self._media_url(self.private_deck, "cat.jpg"))
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_anonymous_cannot_access_private_deck_media(self):
+        resp = self.client.get(self._media_url(self.private_deck, "cat.jpg"))
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_other_user_can_access_public_deck_media(self):
+        self.client.force_authenticate(self.other)
+        resp = self.client.get(self._media_url(self.public_deck, "pub.jpg"))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_anonymous_can_access_public_deck_media(self):
+        resp = self.client.get(self._media_url(self.public_deck, "pub.jpg"))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_nonexistent_filename_returns_404(self):
+        self.client.force_authenticate(self.user)
+        resp = self.client.get(self._media_url(self.private_deck, "missing.jpg"))
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_response_has_correct_content_type(self):
+        self.client.force_authenticate(self.user)
+        resp = self.client.get(self._media_url(self.private_deck, "cat.jpg"))
+        self.assertIn("image/jpeg", resp.get("Content-Type", ""))
+
+    def test_response_body_matches_saved_file(self):
+        self.client.force_authenticate(self.user)
+        resp = self.client.get(self._media_url(self.private_deck, "cat.jpg"))
+        self.assertEqual(b"".join(resp.streaming_content), _MINIMAL_JPEG)
+
+
+# ---------------------------------------------------------------------------
+# Card serializer media URL rewriting tests
+# ---------------------------------------------------------------------------
+
+class CardSerializerMediaURLTests(APITestCase):
+    """Tests for _rewrite_media_urls() via the card API."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="rewriter", email="rewriter@example.com", password="pass"
+        )
+        self.client.force_authenticate(self.user)
+        self.deck = Deck.objects.create(name="Rewrite Deck", user=self.user)
+
+    def _card_url(self, card):
+        return reverse("card-detail", kwargs={"deck_pk": self.deck.id, "pk": card.id})
+
+    def _create_card(self, front="Q", back="A", extra_notes=None):
+        return Card.objects.create(
+            deck=self.deck, front=front, back=back,
+            extra_notes=extra_notes or [],
+        )
+
+    def test_img_src_rewritten_in_front(self):
+        card = self._create_card(front='<img src="cat.jpg">')
+        resp = self.client.get(self._card_url(card))
+        expected = f'/api/decks/{self.deck.id}/media/cat.jpg'
+        self.assertIn(expected, resp.json()["front"])
+
+    def test_img_src_rewritten_in_back(self):
+        card = self._create_card(back='<img src="dog.jpg">')
+        resp = self.client.get(self._card_url(card))
+        self.assertIn(f'/api/decks/{self.deck.id}/media/dog.jpg', resp.json()["back"])
+
+    def test_img_src_rewritten_in_extra_notes(self):
+        card = self._create_card(extra_notes=['<img src="extra.jpg">'])
+        resp = self.client.get(self._card_url(card))
+        self.assertIn(f'/api/decks/{self.deck.id}/media/extra.jpg', resp.json()["extra_notes"][0])
+
+    def test_sound_tag_converted_to_audio_element(self):
+        card = self._create_card(back="[sound:audio.mp3]")
+        resp = self.client.get(self._card_url(card))
+        back = resp.json()["back"]
+        self.assertIn("<audio", back)
+        self.assertIn(f'/api/decks/{self.deck.id}/media/audio.mp3', back)
+
+    def test_absolute_url_not_rewritten(self):
+        card = self._create_card(front='<img src="https://example.com/img.png">')
+        resp = self.client.get(self._card_url(card))
+        self.assertIn("https://example.com/img.png", resp.json()["front"])
+
+    def test_already_rewritten_url_is_idempotent(self):
+        already = f'<img src="/api/decks/{self.deck.id}/media/cat.jpg">'
+        card = self._create_card(front=already)
+        resp = self.client.get(self._card_url(card))
+        front = resp.json()["front"]
+        # Should appear exactly once — not doubled
+        self.assertEqual(front.count(f'/api/decks/{self.deck.id}/media/cat.jpg'), 1)
+
+    def test_multiple_sound_tags_all_rewritten(self):
+        card = self._create_card(back="[sound:a.mp3] and [sound:b.mp3]")
+        resp = self.client.get(self._card_url(card))
+        back = resp.json()["back"]
+        self.assertIn(f'/api/decks/{self.deck.id}/media/a.mp3', back)
+        self.assertIn(f'/api/decks/{self.deck.id}/media/b.mp3', back)
+
+    def test_card_without_media_references_unchanged(self):
+        card = self._create_card(front="Plain text front", back="Plain text back")
+        resp = self.client.get(self._card_url(card))
+        self.assertEqual(resp.json()["front"], "Plain text front")
+        self.assertEqual(resp.json()["back"], "Plain text back")

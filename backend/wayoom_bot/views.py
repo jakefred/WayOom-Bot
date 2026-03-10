@@ -9,8 +9,10 @@ Ownership enforcement strategy:
   never self-assign ownership.
 """
 
+from django.core.files.base import ContentFile
+from django.http import FileResponse
 from rest_framework import viewsets
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
@@ -19,7 +21,7 @@ from django.db import transaction
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 from .importers.apkg import parse_apkg
-from .models import Card, Deck
+from .models import Card, Deck, DeckMedia
 from .permissions import IsOwnerOrReadOnly
 from .serializers import ApkgImportSerializer, CardSerializer, DeckSerializer
 
@@ -126,6 +128,8 @@ class ApkgImportView(APIView):
         decks_created = 0
         cards_created = 0
         cards_skipped = 0
+        media_created = 0
+        media_skipped = 0
         errors = list(parse_result.errors)
 
         with transaction.atomic():
@@ -178,11 +182,79 @@ class ApkgImportView(APIView):
             Card.objects.bulk_create(card_objects, ignore_conflicts=True)
             cards_created = len(card_objects) - cards_skipped
 
+            # Save media files for every deck in the import.
+            # Anki media is collection-scoped, so each file is associated with
+            # all decks.  get_or_create on (deck, original_filename) deduplicates
+            # re-imports safely — the first import wins.
+            all_decks = list(anki_id_to_deck.values())
+            for media_entry in parse_result.media:
+                original_filename = media_entry["original_filename"]
+                file_bytes = media_entry["file_bytes"]
+                for deck in all_decks:
+                    _, created = DeckMedia.objects.get_or_create(
+                        deck=deck,
+                        original_filename=original_filename,
+                        defaults={"file_size": len(file_bytes)},
+                    )
+                    if created:
+                        # Fetch the newly created object so we can save the file
+                        # through the FileField (get_or_create doesn't return
+                        # the instance in a state ready for file attachment).
+                        dm = DeckMedia.objects.get(deck=deck, original_filename=original_filename)
+                        dm.file.save(
+                            original_filename,
+                            ContentFile(file_bytes),
+                            save=True,
+                        )
+                        media_created += 1
+                    else:
+                        media_skipped += 1
+
         return Response(
             {
                 "decks_created": decks_created,
                 "cards_created": cards_created,
                 "cards_skipped": cards_skipped,
+                "media_created": media_created,
+                "media_skipped": media_skipped,
                 "errors": errors,
             }
         )
+
+
+@extend_schema(
+    summary="Serve a deck media file",
+    description=(
+        "Return a media file (image, audio, etc.) attached to a deck. "
+        "Access follows the deck's visibility — public deck media is readable "
+        "without authentication; private deck media requires the owner's token."
+    ),
+    responses={
+        200: OpenApiResponse(description="File contents with correct Content-Type."),
+        404: OpenApiResponse(description="File not found or not visible to you."),
+    },
+)
+class DeckMediaView(APIView):
+    """GET /api/decks/<deck_pk>/media/<filename>/ — serve a deck media file."""
+
+    permission_classes = [IsAuthenticatedOrReadOnly]
+
+    def get(self, request, deck_pk, filename):
+        user = request.user
+        qs = DeckMedia.objects.select_related("deck")
+        if user.is_authenticated:
+            qs = qs.visible_to(user)
+        else:
+            qs = qs.filter(deck__is_public=True)
+
+        try:
+            media = qs.get(deck_id=deck_pk, original_filename=filename)
+        except DeckMedia.DoesNotExist:
+            raise NotFound("Media file not found.")
+
+        response = FileResponse(
+            media.file.open("rb"),
+            content_type=media.content_type or "application/octet-stream",
+        )
+        response["Content-Disposition"] = f'inline; filename="{media.original_filename}"'
+        return response

@@ -136,11 +136,24 @@ def _insert_card(conn: sqlite3.Connection, card_id: int, nid: int, did: int,
     )
 
 
-def _build_zip(sqlite_bytes: bytes) -> bytes:
+def _build_zip(sqlite_bytes: bytes, media: dict[str, bytes] | None = None) -> bytes:
+    """Build an .apkg zip.
+
+    media: optional dict of {original_filename: file_bytes}.  The manifest is
+    auto-generated with sequential numeric keys ("0", "1", ...).
+    """
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("collection.anki21", sqlite_bytes)
-        zf.writestr("media", "{}")
+        if media:
+            manifest = {}
+            for idx, (filename, data) in enumerate(media.items()):
+                key = str(idx)
+                manifest[key] = filename
+                zf.writestr(key, data)
+            zf.writestr("media", json.dumps(manifest))
+        else:
+            zf.writestr("media", "{}")
     return buf.getvalue()
 
 
@@ -303,8 +316,67 @@ def build_card_types():
     print(f"Written: {path} ({len(apkg):,} bytes)")
 
 
+# ---------------------------------------------------------------------------
+# Fixture 4: media_deck.apkg
+# One deck with two cards that reference an image and an audio file.
+# The media manifest maps "0" → "cat.jpg" and "1" → "pronunciation.mp3".
+# ---------------------------------------------------------------------------
+
+# Minimal valid JPEG header (1×1 white pixel) — small enough for tests.
+_MINIMAL_JPEG = bytes([
+    0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
+    0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
+])
+
+# Minimal valid MP3 frame header (silent frame) — just enough bytes for tests.
+_MINIMAL_MP3 = bytes([0xFF, 0xFB, 0x90, 0x00]) + bytes(413)
+
+
+def build_media_deck():
+    model_id = 1000000020
+    deck_id = 2000000020
+
+    models = {
+        str(model_id): {
+            "id": model_id,
+            "name": "Basic",
+            "flds": [{"name": "Front", "ord": 0}, {"name": "Back", "ord": 1}],
+            "tmpls": [{"name": "Card 1", "ord": 0, "qfmt": "{{Front}}", "afmt": "{{Back}}"}],
+        }
+    }
+    decks = {str(deck_id): {"id": deck_id, "name": "Media Deck"}}
+
+    conn = sqlite3.connect(":memory:")
+    _init_schema(conn)
+    _insert_col(conn, _make_col_row(models, decks))
+
+    # Card 1: front has an <img> reference
+    _insert_note(conn, 1020, "guid0020", model_id,
+                 ['What animal is this? <img src="cat.jpg">', "A cat"])
+    _insert_card(conn, 2020, 1020, deck_id)
+
+    # Card 2: back has a [sound:] reference
+    _insert_note(conn, 1021, "guid0021", model_id,
+                 ["How do you pronounce 猫?", "[sound:pronunciation.mp3]"])
+    _insert_card(conn, 2021, 1021, deck_id)
+
+    media_files = {
+        "cat.jpg": _MINIMAL_JPEG,
+        "pronunciation.mp3": _MINIMAL_MP3,
+    }
+
+    apkg = _build_zip(_db_bytes(conn), media=media_files)
+    conn.close()
+
+    path = os.path.join(FIXTURES_DIR, "media_deck.apkg")
+    with open(path, "wb") as f:
+        f.write(apkg)
+    print(f"Written: {path} ({len(apkg):,} bytes)")
+
+
 if __name__ == "__main__":
     build_basic_deck()
     build_multi_deck()
     build_card_types()
+    build_media_deck()
     print("All fixtures built.")

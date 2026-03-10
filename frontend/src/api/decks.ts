@@ -58,6 +58,8 @@ export interface ApkgImportResult {
   decks_created: number;
   cards_created: number;
   cards_skipped: number;
+  media_created: number;
+  media_skipped: number;
   errors: string[];
 }
 

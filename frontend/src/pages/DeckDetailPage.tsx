@@ -1,5 +1,15 @@
 import { useEffect, useState, type FormEvent } from "react";
 import DOMPurify from "dompurify";
+
+// Allow <audio> tags produced by the [sound:] → <audio> rewrite in CardSerializer.
+const _PURIFY_CONFIG: DOMPurify.Config = {
+  ADD_TAGS: ["audio"],
+  ADD_ATTR: ["controls"],
+};
+
+function sanitizeCardHtml(html: string): string {
+  return sanitizeCardHtml(html, _PURIFY_CONFIG);
+}
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { apiListCards, apiCreateCard, type Card, type CardType } from "@/api/decks";
@@ -189,18 +199,18 @@ export default function DeckDetailPage() {
                     <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       Front
                     </p>
-                    <div className="text-sm" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(card.front) }} />
+                    <div className="text-sm" dangerouslySetInnerHTML={{ __html: sanitizeCardHtml(card.front) }} />
                   </div>
                   <div>
                     <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       Back
                     </p>
-                    <div className="text-sm" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(card.back) }} />
+                    <div className="text-sm" dangerouslySetInnerHTML={{ __html: sanitizeCardHtml(card.back) }} />
                   </div>
                   {card.extra_notes.length > 0 && (
                     <div className="space-y-2 border-t pt-3">
                       {card.extra_notes.map((note, i) => (
-                        <div key={i} className="text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(note) }} />
+                        <div key={i} className="text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: sanitizeCardHtml(note) }} />
                       ))}
                     </div>
                   )}

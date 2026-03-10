@@ -75,6 +75,10 @@ class ParseResult:
     decks: list[dict[str, Any]] = field(default_factory=list)
     cards: list[dict[str, Any]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    # Each entry: {"original_filename": str, "file_bytes": bytes}
+    # Media is deck-scoped in Anki (any card can reference any file), so the
+    # view associates each media file with every deck in the import.
+    media: list[dict[str, Any]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -391,9 +395,11 @@ def parse_apkg(file_bytes: bytes) -> ParseResult:
         file_bytes: Raw bytes of the .apkg file.
 
     Returns:
-        ParseResult with lists of deck kwargs, card kwargs, and error strings.
-        Card kwargs include '_deck_anki_id' (int) so the caller can resolve
-        the correct Deck FK after creating decks.
+        ParseResult with lists of deck kwargs, card kwargs, media entries, and
+        error strings.  Card kwargs include '_deck_anki_id' (int) so the caller
+        can resolve the correct Deck FK after creating decks.  Media entries
+        are deck-scoped (Anki media is shared across all cards in a collection),
+        so the view associates each media file with every deck in the import.
 
     Raises:
         ValueError: If the file is not a valid zip archive or .apkg.
@@ -430,7 +436,50 @@ def parse_apkg(file_bytes: bytes) -> ParseResult:
         finally:
             _os.unlink(tmp.name)
 
+        # --- Extract media files from the zip ---
+        # The 'media' file is a JSON object mapping numbered keys to original
+        # filenames: {"0": "cat.jpg", "1": "pronunciation.mp3", ...}.
+        # The actual file bytes live under the corresponding numbered entries.
+        _extract_media(zf, result)
+
     return result
+
+
+def _extract_media(zf: zipfile.ZipFile, result: ParseResult) -> None:
+    """Read the Anki media manifest and extract file bytes into result.media.
+
+    Anki media is collection-level, not deck-level: any card can reference any
+    file.  We store the bytes here; the view will associate each file with every
+    deck in the import.
+
+    Silently skips the media section if the manifest is missing or malformed,
+    and records per-file errors rather than aborting the whole import.
+    """
+    if "media" not in zf.namelist():
+        return
+
+    try:
+        manifest: dict[str, str] = json.loads(zf.read("media"))
+    except (json.JSONDecodeError, KeyError):
+        result.errors.append("Could not read media manifest — media files skipped.")
+        return
+
+    for numbered_key, original_filename in manifest.items():
+        if not original_filename or not numbered_key:
+            continue
+        try:
+            file_bytes = zf.read(numbered_key)
+        except KeyError:
+            result.errors.append(
+                f"Media file {original_filename!r} listed in manifest but missing from archive — skipped."
+            )
+            continue
+        result.media.append(
+            {
+                "original_filename": original_filename,
+                "file_bytes": file_bytes,
+            }
+        )
 
 
 def _parse_collection(cursor: sqlite3.Cursor, fmt: str) -> ParseResult:

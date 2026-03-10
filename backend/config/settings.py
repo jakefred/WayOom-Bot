@@ -146,6 +146,12 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# User-uploaded media (card images, audio from .apkg imports).
+# Files are served through an authenticated API view, not Django's default
+# media serving, so MEDIA_URL is declared but not wired to a URL pattern.
+MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_URL = "/media/"
+
 # Django REST Framework — global defaults applied to every view.
 # Individual viewsets can override these with their own permission_classes list.
 REST_FRAMEWORK = {

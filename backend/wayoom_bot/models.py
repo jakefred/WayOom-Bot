@@ -1,5 +1,8 @@
 """Models for decks and cards used by the WayOom bot."""
 
+import mimetypes
+from pathlib import Path
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxLengthValidator, MaxValueValidator
@@ -220,3 +223,85 @@ class Card(models.Model):
 
     def __repr__(self):
         return f"<Card id={self.id} front={self.front[:30]!r} deck_id={self.deck_id}>"
+
+
+# ---------------------------------------------------------------------------
+# DeckMedia
+# ---------------------------------------------------------------------------
+
+def _deck_media_upload_path(instance, filename):
+    """Return the on-disk path for an uploaded media file.
+
+    Organises files under MEDIA_ROOT as:
+        deck_media/<deck_id>/<deckmedia_uuid><original_ext>
+
+    Using the DeckMedia UUID in the filename prevents collisions when two
+    decks happen to have files with the same original name.
+    """
+    ext = Path(filename).suffix
+    return f"deck_media/{instance.deck_id}/{instance.id}{ext}"
+
+
+class DeckMediaQuerySet(models.QuerySet):
+    """Ownership-aware queryset for DeckMedia.
+
+    Media inherits its deck's privacy — treat a media file as private if its
+    deck is. Use visible_to() for reads and owned_by() for writes.
+    """
+
+    def visible_to(self, user):
+        """Return media whose deck is owned by the user or marked public."""
+        return self.filter(
+            models.Q(deck__user=user) | models.Q(deck__is_public=True)
+        )
+
+    def owned_by(self, user):
+        """Return only media whose deck is owned by the user."""
+        return self.filter(deck__user=user)
+
+
+class DeckMedia(models.Model):
+    """A media file (image, audio, etc.) belonging to a deck.
+
+    Anki media is deck-scoped: the .apkg manifest maps filenames to files and
+    any card in the deck can reference any filename via <img src="..."> or
+    [sound:...] syntax. DeckMedia stores the file and preserves the original
+    Anki filename so card HTML references resolve correctly.
+
+    The unique constraint on (deck, original_filename) enables safe re-import
+    deduplication — re-importing the same .apkg skips files that already exist.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    deck = models.ForeignKey(Deck, on_delete=models.CASCADE, related_name="media")
+    original_filename = models.CharField(max_length=255)
+    file = models.FileField(upload_to=_deck_media_upload_path)
+    content_type = models.CharField(max_length=100, blank=True)
+    file_size = models.PositiveIntegerField(default=0)  # bytes
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = DeckMediaQuerySet.as_manager()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["deck", "original_filename"],
+                name="wayoom_deckmedia_deck_filename_uniq",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["deck", "original_filename"], name="wayoom_dm_deck_fname_idx"),
+        ]
+
+    def save(self, *args, **kwargs):
+        # Auto-detect MIME type from the original filename if not already set.
+        if not self.content_type and self.original_filename:
+            mime, _ = mimetypes.guess_type(self.original_filename)
+            self.content_type = mime or "application/octet-stream"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.original_filename
+
+    def __repr__(self):
+        return f"<DeckMedia id={self.id} filename={self.original_filename!r} deck_id={self.deck_id}>"

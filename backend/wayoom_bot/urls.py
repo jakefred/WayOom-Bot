@@ -29,6 +29,11 @@ urlpatterns = router.urls + [
         name="import-apkg",
     ),
     path(
+        "decks/<uuid:deck_pk>/media/<path:filename>",
+        views.DeckMediaView.as_view(),
+        name="deck-media",
+    ),
+    path(
         "decks/<uuid:deck_pk>/cards/",
         views.CardViewSet.as_view({"get": "list", "post": "create"}),
         name="card-list",
