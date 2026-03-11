@@ -23,9 +23,11 @@ Card model expanded for lossless Anki import. See `docs/adding-model-fields.md` 
 - [x] **`.apkg` import** — `POST /api/import/apkg/` + frontend upload UI. Supports `.anki2`, `.anki21`, and `.anki21b` (zstd-compressed) formats. Deterministic UUID v5 dedup, partial failure handling, 50 MB limit. 26 dedicated tests.
 - [x] **Media attachments** — `DeckMedia` model stores images and audio from `.apkg` imports. Served via `GET /api/decks/<id>/media/<filename>` with ownership enforcement. Card HTML rewritten at API time to resolve bare filenames to served URLs; `[sound:]` tags converted to `<audio>` elements. 13 dedicated tests.
 
-### Up Next
+### Done — Study Mode
 
-- [ ] Flashcard study mode — flip cards, start with front, reveal back below (keeping front visible) reveal each extra note below one at a time. https://github.com/jakefred/WayOom-Bot/issues/26
+- [x] **Flashcard study mode** — progressive reveal: front always visible, tap to show back, then each extra note one at a time. Dot indicators show reveal progress. Keyboard navigation (Space/Enter/arrows). ([#26](https://github.com/jakefred/WayOom-Bot/issues/26))
+
+### Up Next
 - [ ] Edit and delete decks and cards from the UI
 - [ ] Frontend design review ([#7](https://github.com/jakefred/WayOom-Bot/issues/7))
 - [ ] Sidebar navigation ([#17](https://github.com/jakefred/WayOom-Bot/issues/17))

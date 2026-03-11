@@ -4,6 +4,7 @@ import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import DeckListPage from "@/pages/DeckListPage";
 import DeckDetailPage from "@/pages/DeckDetailPage";
+import StudyPage from "@/pages/StudyPage";
 import type { ReactNode } from "react";
 
 /** Redirects unauthenticated users to /login; shows a loading screen while
@@ -45,6 +46,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <DeckDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/decks/:deckId/study"
+            element={
+              <ProtectedRoute>
+                <StudyPage />
               </ProtectedRoute>
             }
           />

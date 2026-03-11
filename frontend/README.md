@@ -29,12 +29,14 @@ src/
 ├── context/
 │   └── AuthContext.tsx   # JWT token state; provides useAuth() hook
 ├── lib/
-│   └── utils.ts         # cn() helper from shadcn/ui
+│   ├── utils.ts         # cn() helper from shadcn/ui
+│   └── sanitize.ts      # sanitizeCardHtml() — shared DOMPurify config
 ├── pages/
 │   ├── LoginPage.tsx
 │   ├── RegisterPage.tsx
 │   ├── DeckListPage.tsx
-│   └── DeckDetailPage.tsx
+│   ├── DeckDetailPage.tsx
+│   └── StudyPage.tsx    # Flashcard study mode with progressive reveal
 ├── App.tsx              # BrowserRouter, AuthProvider, route definitions
 └── main.tsx             # Entry point
 ```
@@ -49,6 +51,7 @@ src/
 | `/register`      | RegisterPage      | No            |
 | `/decks`         | DeckListPage      | Yes           |
 | `/decks/:deckId` | DeckDetailPage    | Yes           |
+| `/decks/:deckId/study` | StudyPage  | Yes           |
 | `/`              | Redirects to `/decks` | —         |
 
 Unauthenticated users are redirected to `/login`.

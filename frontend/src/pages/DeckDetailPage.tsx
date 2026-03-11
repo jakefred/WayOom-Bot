@@ -1,15 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import DOMPurify from "dompurify";
-
-// Allow <audio> tags produced by the [sound:] → <audio> rewrite in CardSerializer.
-const _PURIFY_CONFIG: DOMPurify.Config = {
-  ADD_TAGS: ["audio"],
-  ADD_ATTR: ["controls"],
-};
-
-function sanitizeCardHtml(html: string): string {
-  return sanitizeCardHtml(html, _PURIFY_CONFIG);
-}
+import { sanitizeCardHtml } from "@/lib/sanitize";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { apiListCards, apiCreateCard, type Card, type CardType } from "@/api/decks";
@@ -93,13 +83,20 @@ export default function DeckDetailPage() {
               ← Back to Decks
             </Link>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowForm((v) => !v)}
-          >
-            {showForm ? "Cancel" : "Add Card"}
-          </Button>
+          <div className="flex items-center gap-2">
+            {cards.length > 0 && (
+              <Button variant="outline" size="sm" asChild>
+                <Link to={`/decks/${deckId}/study`}>Study</Link>
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowForm((v) => !v)}
+            >
+              {showForm ? "Cancel" : "Add Card"}
+            </Button>
+          </div>
         </div>
 
         {/* Add card form */}

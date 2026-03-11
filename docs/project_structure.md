@@ -45,12 +45,14 @@ WayOom Bot/
 │   │   ├── context/
 │   │   │   └── AuthContext.tsx      JWT state — access in memory, refresh in localStorage, silent refresh on mount
 │   │   ├── lib/
-│   │   │   └── utils.ts            cn() helper from shadcn/ui
+│   │   │   ├── utils.ts            cn() helper from shadcn/ui
+│   │   │   └── sanitize.ts         sanitizeCardHtml() — shared DOMPurify config for card HTML
 │   │   ├── pages/
 │   │   │   ├── LoginPage.tsx
 │   │   │   ├── RegisterPage.tsx
 │   │   │   ├── DeckListPage.tsx    Deck list, new deck form, .apkg import button
-│   │   │   └── DeckDetailPage.tsx  Card list with sanitized HTML rendering (DOMPurify)
+│   │   │   ├── DeckDetailPage.tsx  Card list with sanitized HTML rendering (DOMPurify)
+│   │   │   └── StudyPage.tsx       Flashcard study mode — progressive reveal, dot indicators, keyboard nav
 │   │   ├── App.tsx                 BrowserRouter, AuthProvider, route definitions, ProtectedRoute
 │   │   └── main.tsx                Entry point
 │   ├── index.html
@@ -168,6 +170,7 @@ Uses **deterministic UUID v5** for deduplication — re-importing the same file 
 | `/register` | RegisterPage | No |
 | `/decks` | DeckListPage | Yes |
 | `/decks/:deckId` | DeckDetailPage | Yes |
+| `/decks/:deckId/study` | StudyPage | Yes |
 | `/` | Redirects to `/decks` | — |
 
 `ProtectedRoute` redirects unauthenticated users to `/login` and shows a loading screen during silent token refresh.
