@@ -41,3 +41,5 @@ htmlcov/
 
 # Anki reference files — large binaries, not for version control
 *.apkg
+# But keep test fixture .apkg files
+!backend/wayoom_bot/test_fixtures/*.apkg
