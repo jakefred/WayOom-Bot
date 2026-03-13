@@ -59,6 +59,33 @@ _ANKI_QUEUE_BURIED_USER = -3
 
 
 # ---------------------------------------------------------------------------
+# Text decoding
+# ---------------------------------------------------------------------------
+
+def _decode_text(value: str | bytes | None) -> str:
+    """Safely decode a value from SQLite into a Python str.
+
+    Anki databases created by older versions or non-UTF-8 locales may store
+    TEXT columns in Latin-1, Windows-1252, or other encodings.  Python's
+    sqlite3 module raises UnicodeDecodeError when its text_factory (default
+    ``str``) encounters such data.
+
+    To avoid this, callers set ``conn.text_factory = bytes`` so all TEXT
+    columns come back as ``bytes``.  This helper then decodes with a
+    UTF-8 → Latin-1 fallback chain, which covers the vast majority of
+    real-world Anki exports.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    try:
+        return value.decode("utf-8")
+    except UnicodeDecodeError:
+        return value.decode("latin-1")
+
+
+# ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
 
@@ -166,8 +193,8 @@ def _parse_col_meta_v11(cursor: sqlite3.Cursor) -> tuple[dict, dict]:
     row = cursor.execute("SELECT models, decks FROM col LIMIT 1").fetchone()
     if row is None:
         raise ValueError("Anki collection table is empty.")
-    models_json = row["models"]
-    decks_json = row["decks"]
+    models_json = _decode_text(row["models"])
+    decks_json = _decode_text(row["decks"])
     if not models_json or not decks_json:
         raise ValueError("col.models or col.decks is empty (schema v18?).")
     models_by_id: dict[str, dict] = json.loads(models_json)
@@ -196,14 +223,14 @@ def _parse_col_meta_v18(cursor: sqlite3.Cursor) -> tuple[dict, dict]:
     notetypes = cursor.execute("SELECT id, name FROM notetypes").fetchall()
     for nt in notetypes:
         nt_id = str(nt["id"])
-        models_by_id[nt_id] = {"id": nt["id"], "name": nt["name"], "flds": [], "tmpls": []}
+        models_by_id[nt_id] = {"id": nt["id"], "name": _decode_text(nt["name"]), "flds": [], "tmpls": []}
 
     # Read fields for each note type.
     fields_rows = cursor.execute("SELECT ntid, ord, name FROM fields ORDER BY ntid, ord").fetchall()
     for fr in fields_rows:
         nt_id = str(fr["ntid"])
         if nt_id in models_by_id:
-            models_by_id[nt_id]["flds"].append({"name": fr["name"], "ord": fr["ord"]})
+            models_by_id[nt_id]["flds"].append({"name": _decode_text(fr["name"]), "ord": fr["ord"]})
 
     # Read templates for each note type — we need qfmt for cloze detection.
     templates_rows = cursor.execute(
@@ -217,7 +244,7 @@ def _parse_col_meta_v18(cursor: sqlite3.Cursor) -> tuple[dict, dict]:
             # as a fallback since the qfmt is in Protobuf.
             qfmt = _extract_template_qfmt(tr["config"]) if tr["config"] else ""
             models_by_id[nt_id]["tmpls"].append({
-                "name": tr["name"],
+                "name": _decode_text(tr["name"]),
                 "ord": tr["ord"],
                 "qfmt": qfmt,
             })
@@ -226,7 +253,7 @@ def _parse_col_meta_v18(cursor: sqlite3.Cursor) -> tuple[dict, dict]:
     decks_by_id: dict[str, dict] = {}
     deck_rows = cursor.execute("SELECT id, name FROM decks").fetchall()
     for dr in deck_rows:
-        decks_by_id[str(dr["id"])] = {"id": dr["id"], "name": dr["name"]}
+        decks_by_id[str(dr["id"])] = {"id": dr["id"], "name": _decode_text(dr["name"])}
 
     return models_by_id, decks_by_id
 
@@ -428,6 +455,10 @@ def parse_apkg(file_bytes: bytes) -> ParseResult:
             tmp.close()
             conn = sqlite3.connect(tmp.name)
             try:
+                # Read TEXT columns as raw bytes so non-UTF-8 data doesn't
+                # crash sqlite3's default str decoder.  Callers use
+                # _decode_text() to handle encoding gracefully.
+                conn.text_factory = bytes
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 result = _parse_collection(cursor, fmt)
@@ -532,7 +563,7 @@ def _parse_collection(cursor: sqlite3.Cursor, fmt: str) -> ParseResult:
             card_kwargs = _build_card_kwargs(row, models_by_id, collection_crt)
         except Exception as exc:  # noqa: BLE001
             result.errors.append(
-                f"Skipped card (note_guid={row['note_guid']!r}, "
+                f"Skipped card (note_guid={_decode_text(row['note_guid'])!r}, "
                 f"ord={row['card_ord']}): {exc}"
             )
             continue
@@ -566,7 +597,7 @@ def _build_card_kwargs(
     collection_crt: int,
 ) -> dict[str, Any]:
     """Convert a single joined note+card row into Card model kwargs."""
-    note_guid: str = row["note_guid"]
+    note_guid: str = _decode_text(row["note_guid"])
     model_id: int = row["model_id"]
     card_ord: int = row["card_ord"]
     anki_card_type: int = row["card_type"]
@@ -580,7 +611,8 @@ def _build_card_kwargs(
     card_type = _map_note_type(model)
 
     # --- Parse fields (0x1F unit-separator delimited in Anki) ---
-    raw_fields = row["fields"].split("\x1f")
+    fields_text = _decode_text(row["fields"])
+    raw_fields = fields_text.split("\x1f")
 
     front = raw_fields[0] if len(raw_fields) > 0 else ""
     back = raw_fields[1] if len(raw_fields) > 1 else ""
@@ -590,7 +622,7 @@ def _build_card_kwargs(
     extra_notes = extra_notes[:_MAX_EXTRA_FIELDS]
 
     # --- Tags: Anki stores space-separated, with leading/trailing spaces ---
-    tags_raw: str = row["tags_raw"]
+    tags_raw: str = _decode_text(row["tags_raw"])
     tags = [t for t in tags_raw.strip().split() if t]
 
     # --- Spaced repetition fields ---

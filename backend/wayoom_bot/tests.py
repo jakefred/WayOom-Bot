@@ -1000,6 +1000,93 @@ class ApkgParserTests(TestCase):
         self.assertEqual(len(result.errors), 1)
         self.assertIn("pguid002", result.errors[0])
 
+    def test_non_utf8_fields_parsed_without_error(self):
+        """Anki databases from older versions or non-English locales may store
+        note fields in Latin-1 rather than UTF-8.  The parser must not crash
+        on non-UTF-8 data (the 'utf-8' codec error that prompted this test)."""
+        import json
+        import sqlite3
+        import tempfile
+
+        conn = sqlite3.connect(":memory:")
+        conn.executescript("""
+            CREATE TABLE col (id INTEGER PRIMARY KEY, crt INTEGER NOT NULL,
+                mod INTEGER NOT NULL, scm INTEGER NOT NULL, ver INTEGER NOT NULL,
+                dty INTEGER NOT NULL, usn INTEGER NOT NULL, ls INTEGER NOT NULL,
+                conf TEXT NOT NULL, models TEXT NOT NULL, decks TEXT NOT NULL,
+                dconf TEXT NOT NULL, tags TEXT NOT NULL);
+            CREATE TABLE notes (id INTEGER PRIMARY KEY, guid TEXT NOT NULL,
+                mid INTEGER NOT NULL, mod INTEGER NOT NULL, usn INTEGER NOT NULL,
+                tags TEXT NOT NULL, flds BLOB NOT NULL, sfld BLOB NOT NULL,
+                csum INTEGER NOT NULL, flags INTEGER NOT NULL, data TEXT NOT NULL);
+            CREATE TABLE cards (id INTEGER PRIMARY KEY, nid INTEGER NOT NULL,
+                did INTEGER NOT NULL, ord INTEGER NOT NULL, mod INTEGER NOT NULL,
+                usn INTEGER NOT NULL, type INTEGER NOT NULL, queue INTEGER NOT NULL,
+                due INTEGER NOT NULL, ivl INTEGER NOT NULL, factor INTEGER NOT NULL,
+                reps INTEGER NOT NULL, lapses INTEGER NOT NULL, left INTEGER NOT NULL,
+                odue INTEGER NOT NULL, odid INTEGER NOT NULL, flags INTEGER NOT NULL,
+                data TEXT NOT NULL);
+            CREATE TABLE revlog (id INTEGER PRIMARY KEY, cid INTEGER NOT NULL,
+                usn INTEGER NOT NULL, ease INTEGER NOT NULL, ivl INTEGER NOT NULL,
+                lastIvl INTEGER NOT NULL, factor INTEGER NOT NULL, time INTEGER NOT NULL,
+                type INTEGER NOT NULL);
+            CREATE TABLE graves (usn INTEGER NOT NULL, oid INTEGER NOT NULL, type INTEGER NOT NULL);
+        """)
+        mid = 8888001
+        did = 8888002
+        models = {str(mid): {"id": mid, "name": "Basic",
+                              "flds": [{"name": "Front", "ord": 0}, {"name": "Back", "ord": 1}],
+                              "tmpls": [{"name": "Card 1", "ord": 0, "qfmt": "{{Front}}", "afmt": "{{Back}}"}]}}
+        decks = {str(did): {"id": did, "name": "Latin-1 Deck"}}
+        CRT = 1704067200
+        conn.execute(
+            "INSERT INTO col VALUES (1,?,?,?,11,0,0,0,'{}',?,?,'{}','{}')",
+            (CRT, CRT, CRT, json.dumps(models), json.dumps(decks)),
+        )
+        # Insert note with Latin-1 encoded fields: "µ" (0xB5) and "résumé" in
+        # Latin-1 (é = 0xE9).  These bytes are invalid UTF-8 and would crash
+        # sqlite3's default text_factory.
+        latin1_front = "What is µ (micro)?".encode("latin-1")
+        latin1_back = "It is the SI prefix for 10\xb2".encode("latin-1")  # ² = 0xB2
+        flds_blob = latin1_front + b"\x1f" + latin1_back
+        conn.execute(
+            "INSERT INTO notes VALUES (1,?,?,?,0,'',?,?,0,0,'')",
+            ("lat_guid1", mid, CRT, flds_blob, latin1_front),
+        )
+        conn.execute(
+            "INSERT INTO cards VALUES (1,1,?,0,?,0,0,0,1,0,0,0,0,0,0,0,0,'')",
+            (did, CRT),
+        )
+        conn.commit()
+
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        try:
+            bk = sqlite3.connect(tmp.name)
+            conn.backup(bk)
+            bk.close()
+            with open(tmp.name, "rb") as f:
+                sqlite_bytes = f.read()
+        finally:
+            import os as _os
+            _os.unlink(tmp.name)
+        conn.close()
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("collection.anki21", sqlite_bytes)
+            zf.writestr("media", "{}")
+        apkg = buf.getvalue()
+
+        from wayoom_bot.importers.apkg import parse_apkg
+        result = parse_apkg(apkg)
+        self.assertEqual(len(result.cards), 1)
+        self.assertEqual(len(result.errors), 0)
+        card = result.cards[0]
+        # Verify the Latin-1 text was decoded (not mangled or lost).
+        self.assertIn("µ", card["front"])
+        self.assertIn("micro", card["front"])
+
 
 # ---------------------------------------------------------------------------
 # .apkg import — API endpoint tests
